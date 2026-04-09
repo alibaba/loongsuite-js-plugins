@@ -1,11 +1,25 @@
 # loongsuite-js-plugins
 
+---
+
+![loongsuite](/docs/_assets/img/loongsuite-logo.png)
+
+## ✨ Introduction
+
 [![CI](https://github.com/alibaba/loongsuite-js-plugins/actions/workflows/ci.yml/badge.svg)](https://github.com/alibaba/loongsuite-js-plugins/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
 [![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-1.x-blueviolet.svg)](https://opentelemetry.io)
 
-OpenTelemetry instrumentation plugins for AI coding agents. Collect traces, tool calls, and LLM metrics from [Claude Code](https://www.anthropic.com/claude-code) and [OpenClaw](https://openclaw.ai) — zero code changes required.
+LoongSuite JS Plugins is a key component of LoongSuite, Alibaba's unified observability data collection suite, providing OpenTelemetry instrumentation plugins for JavaScript-based AI coding agents. Collect traces, tool calls, and LLM metrics from [Claude Code](https://www.anthropic.com/claude-code) and [OpenClaw](https://openclaw.ai) — zero code changes required.
+
+LoongSuite includes the following key components:
+* [LoongCollector](https://github.com/alibaba/loongcollector): universal node agent, which provides log collection, Prometheus metric collection, and network and security collection capabilities based on eBPF.
+* [LoongSuite Python Agent](https://github.com/alibaba/loongsuite-python-agent): a process agent providing instrumentation for Python applications.
+* [LoongSuite Go Agent](https://github.com/alibaba/loongsuite-go-agent): a process agent for Golang with compile time instrumentation.
+* [LoongSuite Java Agent](https://github.com/alibaba/loongsuite-java-agent): a process agent for Java applications.
+* [LoongSuite JS Plugins](https://github.com/alibaba/loongsuite-js-plugins): OpenTelemetry instrumentation plugins for JavaScript-based AI coding agents.
+* Other upcoming language agents.
 
 ---
 
@@ -178,3 +192,16 @@ Apache-2.0 — see [LICENSE](./LICENSE) for details.
 - [OpenTelemetry GenAI Semantic Conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/)
 - [Claude Code](https://www.anthropic.com/claude-code)
 - [OpenClaw](https://openclaw.ai)
+
+## Community
+
+We are looking forward to your feedback and suggestions. You can join
+our [DingTalk group](https://qr.dingtalk.com/action/joingroup?code=v1,k1,66L9GmXJMuW04ueT1Xl52pV43X2cphzO3yiGuLCm3ks=&_dt_no_comment=1&origin=11?) or scan the QR code below to engage with us.
+
+| LoongSuite JS SIG | LoongCollector SIG | LoongSuite Python SIG |
+|----|----|----|
+| <img src="docs/_assets/img/loongsuite-js-sig-dingtalk.jpg" height="150"> | <img src="docs/_assets/img/loongcollector-sig-dingtalk.jpg" height="150"> | <img src="docs/_assets/img/loongsuite-python-sig-dingtalk.jpg" height="150"> |
+
+| LoongCollector Go SIG | LoongSuite Java SIG |
+|----|----|
+| <img src="docs/_assets/img/loongsuite-go-sig-dingtalk.png" height="150"> | <img src="docs/_assets/img/loongsuite-java-sig-dingtalk.jpg" height="150"> |
