@@ -1,0 +1,53 @@
+{
+  "id": "openclaw-cms-plugin",
+  "name": "OpenClaw OTel Plugin",
+  "version": "0.1.2",
+  "description": "Report OpenClaw AI agent execution traces to any OTLP-compatible backend via OpenTelemetry",
+  "type": "plugin",
+  "entry": "./dist/index.js",
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "endpoint": {
+        "type": "string",
+        "default": "",
+        "description": "OTLP endpoint URL (e.g. https://your-backend:4318)"
+      },
+      "headers": {
+        "type": "object",
+        "default": {},
+        "description": "HTTP headers for authentication (e.g. API keys required by your OTLP backend)",
+        "properties": {
+          "x-arms-license-key": { "type": "string" },
+          "x-arms-project": { "type": "string" },
+          "x-cms-workspace": { "type": "string" }
+        }
+      },
+      "serviceName": {
+        "type": "string",
+        "default": "openclaw-agent",
+        "description": "Service name for traces"
+      },
+      "debug": {
+        "type": "boolean",
+        "default": false,
+        "description": "Enable debug logging"
+      },
+      "batchSize": {
+        "type": "number",
+        "default": 10,
+        "description": "Number of spans to buffer before sending"
+      },
+      "flushIntervalMs": {
+        "type": "number",
+        "default": 5000,
+        "description": "Maximum time (ms) to wait before sending buffered spans"
+      },
+      "enabledHooks": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "List of hooks to enable (if not set, all hooks are enabled)"
+      }
+    }
+  }
+}
