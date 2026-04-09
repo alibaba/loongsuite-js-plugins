@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-claude-plugin:
+    name: Test opentelemetry-instrumentation-claude
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: opentelemetry-instrumentation-claude/package-lock.json
+      - name: Install dependencies
+        working-directory: opentelemetry-instrumentation-claude
+        run: npm ci
+      - name: Run tests
+        working-directory: opentelemetry-instrumentation-claude
+        run: npm test -- --coverage
+
+  build-openclaw-plugin:
+    name: Build opentelemetry-instrumentation-openclaw
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: opentelemetry-instrumentation-openclaw/package-lock.json
+      - name: Install dependencies
+        working-directory: opentelemetry-instrumentation-openclaw
+        run: npm ci
+      - name: Build
+        working-directory: opentelemetry-instrumentation-openclaw
+        run: npm run build
