@@ -98,6 +98,7 @@ program
   .option("--no-user", "Skip user-level settings")
   .option("--project", "Install into project-level settings (.claude/settings.json)")
   .option("--quiet", "Silent mode: warn on error instead of exiting (for postinstall use)")
+  .option("--semconv-dialect <dialect>", "Semantic convention dialect: ALIBABA_CLOUD (default, gen_ai.span.kind) or ALIBABA_GROUP (gen_ai.span_kind_name)", "ALIBABA_CLOUD")
   .action(async (opts) => {
     try {
       await cmdInstall(opts);
