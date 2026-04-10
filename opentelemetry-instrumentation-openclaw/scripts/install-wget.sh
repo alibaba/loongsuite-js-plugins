@@ -393,6 +393,9 @@ process.stdout.write(diagChanges.join('|'));
 
 ok "Config updated"
 
+# ── Write Delta temporality env var to shell profiles ──
+bash "$(dirname "$0")/setup-temporality.sh" --install
+
 # ── Summary ──
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
@@ -403,6 +406,7 @@ echo "  Install dir:   ${TARGET_DIR}"
 echo "  Config file:   ${CONFIG_PATH}"
 echo "  Endpoint:      ${ENDPOINT}"
 echo "  Service name:  ${SERVICE_NAME}"
+echo "  Metric tempo:  Delta (OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta)"
 echo ""
 
 if [[ "$ENABLE_METRICS" == true ]]; then

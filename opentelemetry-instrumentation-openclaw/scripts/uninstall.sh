@@ -190,6 +190,12 @@ else
   warn "No plugin directory to remove"
 fi
 
+# ── Remove Delta temporality env var from shell profiles ──
+UNINSTALL_SCRIPT_DIR="$(dirname "$0")"
+if [[ -f "${UNINSTALL_SCRIPT_DIR}/setup-temporality.sh" ]]; then
+  bash "${UNINSTALL_SCRIPT_DIR}/setup-temporality.sh" --remove
+fi
+
 # ── Restart gateway ──
 OPENCLAW_CMD="openclaw"
 if command -v "$OPENCLAW_CMD" &>/dev/null; then
@@ -214,4 +220,5 @@ if [[ "$KEEP_METRICS" == true ]]; then
 else
   echo "  diagnostics-otel: Disabled"
 fi
+echo "  Metric tempo env: Removed from shell profiles"
 echo ""

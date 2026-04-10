@@ -922,13 +922,13 @@ async function cmdInstall(opts = {}) {
       log(
         installMsg(
           "启用 LLM 输入输出追踪，请使用以下方式启动 Claude Code：\n" +
-          `  CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf NODE_OPTIONS="--require ${interceptPath}" npx -y @anthropic-ai/claude-code@latest\n` +
+          `  CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta NODE_OPTIONS="--require ${interceptPath}" npx -y @anthropic-ai/claude-code@latest\n` +
           "\n或在 Shell 配置文件中添加以下别名（已通过 setup-alias.sh 自动配置）：\n" +
-          `  alias claude='CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf NODE_OPTIONS="--require ${interceptPath}" npx -y @anthropic-ai/claude-code@latest'\n`,
+          `  alias claude='CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta NODE_OPTIONS="--require ${interceptPath}" npx -y @anthropic-ai/claude-code@latest'\n`,
           "To enable LLM call tracing, launch Claude Code with:\n" +
-          `  CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf NODE_OPTIONS="--require ${interceptPath}" npx -y @anthropic-ai/claude-code@latest\n` +
+          `  CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta NODE_OPTIONS="--require ${interceptPath}" npx -y @anthropic-ai/claude-code@latest\n` +
           "\nOr add the following alias to your shell profile (auto-configured via setup-alias.sh):\n" +
-          `  alias claude='CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf NODE_OPTIONS="--require ${interceptPath}" npx -y @anthropic-ai/claude-code@latest'\n`
+          `  alias claude='CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta NODE_OPTIONS="--require ${interceptPath}" npx -y @anthropic-ai/claude-code@latest'\n`
         )
       );
     }
