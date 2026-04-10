@@ -61,9 +61,9 @@ function runCommandQuiet(command: string): string {
 interface ArmsPluginConfig {
   endpoint: string;
   headers: {
-    "x-arms-license-key": string;
-    "x-arms-project": string;
-    "x-cms-workspace": string;
+    "x-arms-license-key"?: string;
+    "x-arms-project"?: string;
+    "x-cms-workspace"?: string;
   };
   serviceName: string;
 }
@@ -89,35 +89,20 @@ async function collectPluginConfig(): Promise<ArmsPluginConfig> {
       name: "licenseKey",
       type: "password",
       message:
-        "请输入 ARMS License Key (x-arms-license-key)\n(可在 CMS2.0 控制台 → 接入中心获取):",
+        "请输入 ARMS License Key (x-arms-license-key)\n(可在 CMS2.0 控制台 → 接入中心获取，可选):",
       mask: "*",
-      validate: (input: string) => {
-        if (input?.trim()) return true;
-        if (existingConfig.headers?.["x-arms-license-key"]) return true;
-        return "License Key 不能为空";
-      },
     },
     {
       name: "armsProject",
       type: "input",
-      message: "请输入 ARMS Project (x-arms-project):",
+      message: "请输入 ARMS Project (x-arms-project，可选):",
       default: existingConfig.headers?.["x-arms-project"] || undefined,
-      validate: (input: string) => {
-        if (input?.trim()) return true;
-        if (existingConfig.headers?.["x-arms-project"]) return true;
-        return "ARMS Project 不能为空";
-      },
     },
     {
       name: "cmsWorkspace",
       type: "input",
-      message: "请输入 CMS Workspace (x-cms-workspace):",
+      message: "请输入 CMS Workspace (x-cms-workspace，可选):",
       default: existingConfig.headers?.["x-cms-workspace"] || undefined,
-      validate: (input: string) => {
-        if (input?.trim()) return true;
-        if (existingConfig.headers?.["x-cms-workspace"]) return true;
-        return "CMS Workspace 不能为空";
-      },
     },
     {
       name: "serviceName",
@@ -142,17 +127,18 @@ async function collectPluginConfig(): Promise<ArmsPluginConfig> {
     "";
   const serviceName = answers.serviceName?.trim() || "openclaw-agent";
 
-  if (!endpoint || !licenseKey || !armsProject) {
-    throw new Error("缺少必要配置: endpoint, licenseKey 或 armsProject");
+  if (!endpoint) {
+    throw new Error("缺少必要配置: endpoint");
   }
+
+  const headers: ArmsPluginConfig["headers"] = {};
+  if (licenseKey) headers["x-arms-license-key"] = licenseKey;
+  if (armsProject) headers["x-arms-project"] = armsProject;
+  if (cmsWorkspace) headers["x-cms-workspace"] = cmsWorkspace;
 
   return {
     endpoint,
-    headers: {
-      "x-arms-license-key": licenseKey,
-      "x-arms-project": armsProject,
-      "x-cms-workspace": cmsWorkspace,
-    },
+    headers,
     serviceName,
   };
 }

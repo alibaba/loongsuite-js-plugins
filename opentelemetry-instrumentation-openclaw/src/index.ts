@@ -383,13 +383,6 @@ const armsTracePlugin: OpenClawPlugin = {
       );
       return;
     }
-    if (!headers || !headers["x-arms-license-key"]) {
-      api.logger.error(
-        "[ArmsTrace] Missing required configuration: 'headers.x-arms-license-key' must be provided",
-      );
-      return;
-    }
-
     const config: ArmsTraceConfig = {
       endpoint,
       headers: headers || {},

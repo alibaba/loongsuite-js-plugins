@@ -66,9 +66,6 @@ done
 # ── Validate required parameters ──
 MISSING=()
 [[ -z "$ENDPOINT" ]]      && MISSING+=("--endpoint")
-[[ -z "$LICENSE_KEY" ]]    && MISSING+=("--x-arms-license-key")
-[[ -z "$ARMS_PROJECT" ]]   && MISSING+=("--x-arms-project")
-[[ -z "$CMS_WORKSPACE" ]]  && MISSING+=("--x-cms-workspace")
 [[ -z "$SERVICE_NAME" ]]   && MISSING+=("--serviceName")
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
@@ -77,10 +74,12 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
   echo "Usage:"
   echo "  curl -fsSL https://<host>/install.sh | bash -s -- \\"
   echo "    --endpoint \"https://...\" \\"
+  echo "    --serviceName \"my-service\""
+  echo ""
+  echo "Optional:"
   echo "    --x-arms-license-key \"xxx\" \\"
   echo "    --x-arms-project \"xxx\" \\"
-  echo "    --x-cms-workspace \"xxx\" \\"
-  echo "    --serviceName \"my-service\""
+  echo "    --x-cms-workspace \"xxx\""
   exit 1
 fi
 
@@ -323,15 +322,15 @@ else paths.push(installDir);
 
 // ── openclaw-cms-plugin: plugins.entries ──
 if (!config.plugins.entries) config.plugins.entries = {};
+const pluginHeaders = {};
+if (licenseKey) pluginHeaders['x-arms-license-key'] = licenseKey;
+if (armsProject) pluginHeaders['x-arms-project'] = armsProject;
+if (cmsWorkspace) pluginHeaders['x-cms-workspace'] = cmsWorkspace;
 config.plugins.entries[pluginName] = {
   enabled: true,
   config: {
     endpoint,
-    headers: {
-      'x-arms-license-key': licenseKey,
-      'x-arms-project': armsProject,
-      'x-cms-workspace': cmsWorkspace
-    },
+    headers: pluginHeaders,
     serviceName
   }
 };
@@ -378,11 +377,11 @@ if (enableMetrics) {
   if (!otel.protocol) otel.protocol = 'http/protobuf';
 
   const prevHeaders = JSON.stringify(otel.headers || {});
-  otel.headers = {
-    'x-arms-license-key': licenseKey,
-    'x-arms-project': armsProject,
-    'x-cms-workspace': cmsWorkspace
-  };
+  const diagHeaders = {};
+  if (licenseKey) diagHeaders['x-arms-license-key'] = licenseKey;
+  if (armsProject) diagHeaders['x-arms-project'] = armsProject;
+  if (cmsWorkspace) diagHeaders['x-cms-workspace'] = cmsWorkspace;
+  otel.headers = diagHeaders;
   if (prevHeaders !== '{}' && prevHeaders !== JSON.stringify(otel.headers)) {
     diagChanges.push('diagnostics.otel.headers updated');
   }
