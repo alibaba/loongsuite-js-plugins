@@ -283,7 +283,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           attributes: {
             "turn.index": turnIdx,
             "gen_ai.input.messages": p,
-            "gen_ai.span_kind_name": "LLM",
+            "gen_ai.span.kind": "LLM",
           },
         },
         parentCtx
@@ -299,7 +299,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
 
       const attrs = {
         "gen_ai.tool.name": toolName,
-        "gen_ai.span_kind_name": "TOOL",
+        "gen_ai.span.kind": "TOOL",
       };
       for (const [k, v] of Object.entries(eventData)) {
         if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
@@ -344,7 +344,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           attributes: {
             "compact.trigger": ev.trigger || "unknown",
             "compact.has_custom_instructions": !!ev.has_custom_instructions,
-            "gen_ai.span_kind_name": "TASK",
+            "gen_ai.span.kind": "TASK",
           },
         },
         parentCtx
@@ -361,7 +361,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             "notification.message": msg,
             "notification.level": ev.level || "info",
             "notification.title": ev.title || "",
-            "gen_ai.span_kind_name": "TASK",
+            "gen_ai.span.kind": "TASK",
           },
         },
         parentCtx
@@ -377,7 +377,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           attributes: {
             "subagent.session_id": subSid,
             "claude_code.hook.type": evType,
-            "gen_ai.span_kind_name": "AGENT",
+            "gen_ai.span.kind": "AGENT",
           },
         },
         parentContext()
@@ -407,7 +407,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
               "gen_ai.usage.input_tokens": childMetrics.input_tokens || ev.input_tokens || 0,
               "gen_ai.usage.output_tokens": childMetrics.output_tokens || ev.output_tokens || 0,
               "gen_ai.request.model": childState.model || "unknown",
-              "gen_ai.span_kind_name": "AGENT",
+              "gen_ai.span.kind": "AGENT",
             },
           },
           parentContext()
@@ -428,7 +428,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
               "gen_ai.usage.cache_read.input_tokens": ev.cache_read_input_tokens || 0,
               "gen_ai.usage.cache_creation.input_tokens": ev.cache_creation_input_tokens || 0,
               "claude_code.hook.type": evType,
-              "gen_ai.span_kind_name": "AGENT",
+              "gen_ai.span.kind": "AGENT",
             },
           },
           parentContext()
@@ -479,7 +479,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             "gen_ai.usage.cache_read_input_tokens": ev.cache_read_input_tokens || 0,
             "gen_ai.usage.cache_creation_input_tokens": ev.cache_creation_input_tokens || 0,
             "claude_code.hook.type": "llm_call",
-            "gen_ai.span_kind_name": "LLM",
+            "gen_ai.span.kind": "LLM",
           },
         },
         parentContext()
@@ -594,7 +594,7 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
       tool_names: (state.tools_used || []).join(","),
       turns: metrics.turns || 0,
       stop_reason: stopReason,
-      "gen_ai.span_kind_name": "TASK",
+      "gen_ai.span.kind": "TASK",
     },
   });
   const sessionCtx = trace.setSpan(context.active(), sessionSpan);
