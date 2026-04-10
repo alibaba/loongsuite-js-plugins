@@ -191,13 +191,21 @@ else
 fi
 
 # ── Remove Delta temporality + semconv env vars from shell profiles ──
-UNINSTALL_SCRIPT_DIR="$(dirname "$0")"
-if [[ -f "${UNINSTALL_SCRIPT_DIR}/setup-temporality.sh" ]]; then
-  bash "${UNINSTALL_SCRIPT_DIR}/setup-temporality.sh" --remove
-fi
-if [[ -f "${UNINSTALL_SCRIPT_DIR}/setup-semconv.sh" ]]; then
-  bash "${UNINSTALL_SCRIPT_DIR}/setup-semconv.sh" --remove
-fi
+_remove_block_from_file() {
+  local file="$1" marker="$2" marker_end="$3"
+  [[ -f "$file" ]] || return
+  grep -q "$marker" "$file" 2>/dev/null || return
+  sed -i "/^${marker}$/,/^${marker_end}$/d" "$file"
+  ok "Removed env block from $file"
+}
+for _f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile"; do
+  _remove_block_from_file "$_f" \
+    '# BEGIN openclaw-cms-plugin-delta-temporality' \
+    '# END openclaw-cms-plugin-delta-temporality'
+  _remove_block_from_file "$_f" \
+    '# BEGIN openclaw-cms-plugin-semconv-dialect' \
+    '# END openclaw-cms-plugin-semconv-dialect'
+done
 
 # ── Restart gateway ──
 OPENCLAW_CMD="openclaw"

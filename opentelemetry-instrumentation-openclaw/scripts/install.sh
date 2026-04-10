@@ -422,10 +422,30 @@ process.stdout.write(diagChanges.join('|'));
 ok "Config updated"
 
 # ── Write Delta temporality env var to shell profiles ──
-bash "$(dirname "$0")/setup-temporality.sh" --install
+_DELTA_ENV_LINE='export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta'
+_DELTA_MARKER='# BEGIN openclaw-cms-plugin-delta-temporality'
+_DELTA_MARKER_END='# END openclaw-cms-plugin-delta-temporality'
+_add_delta_env() {
+  local file="$1"; [[ -f "$file" ]] || return
+  grep -q "$_DELTA_MARKER" "$file" 2>/dev/null && { info "Delta env already present in $file (skipped)"; return; }
+  printf '\n%s\n%s\n%s\n' "$_DELTA_MARKER" "$_DELTA_ENV_LINE" "$_DELTA_MARKER_END" >> "$file"
+  ok "Delta temporality env written to $file"
+}
+for _f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile"; do _add_delta_env "$_f"; done
 
 # ── Write semconv dialect env var to shell profiles ──
-bash "$(dirname "$0")/setup-semconv.sh" --install "${SEMCONV_DIALECT}"
+_SEMCONV_MARKER='# BEGIN openclaw-cms-plugin-semconv-dialect'
+_SEMCONV_MARKER_END='# END openclaw-cms-plugin-semconv-dialect'
+_SEMCONV_ENV_LINE="export LOONGSUITE_SEMCONV_DIALECT_NAME=${SEMCONV_DIALECT}"
+_add_semconv_env() {
+  local file="$1"; [[ -f "$file" ]] || return
+  # Remove existing block first (dialect may have changed)
+  grep -q "$_SEMCONV_MARKER" "$file" 2>/dev/null && \
+    sed -i "/^${_SEMCONV_MARKER}$/,/^${_SEMCONV_MARKER_END}$/d" "$file"
+  printf '\n%s\n%s\n%s\n' "$_SEMCONV_MARKER" "$_SEMCONV_ENV_LINE" "$_SEMCONV_MARKER_END" >> "$file"
+  ok "Semconv dialect env written to $file"
+}
+for _f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile"; do _add_semconv_env "$_f"; done
 
 # ── Restart gateway ──
 info "Restarting OpenClaw gateway..."
