@@ -29,8 +29,10 @@ echo ""
 mkdir -p "$DIST_DIR"
 
 # 打包（从包根目录，排除无关文件）
+# COPYFILE_DISABLE=1 防止 macOS 将 xattr 扩展属性打入 tarball，
+# 避免在 Linux 上解压时出现 "Ignoring unknown extended header keyword" 警告
 cd "$PKG_DIR"
-tar -czf "$OUTPUT" \
+COPYFILE_DISABLE=1 tar -czf "$OUTPUT" \
     --exclude='node_modules' \
     --exclude='coverage' \
     --exclude='dist' \
