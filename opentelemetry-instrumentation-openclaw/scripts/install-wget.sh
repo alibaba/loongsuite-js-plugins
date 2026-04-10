@@ -271,7 +271,8 @@ const armsProject    = process.argv[6];
 const cmsWorkspace   = process.argv[7];
 const serviceName    = process.argv[8];
 const enableMetrics  = process.argv[9] === 'true';
-const diagPluginName = process.argv[10];
+const diagPluginName  = process.argv[10];
+const semconvDialect  = process.argv[11] || 'ALIBABA_CLOUD';
 
 let config = {};
 try {
@@ -307,7 +308,8 @@ config.plugins.entries[pluginName] = {
   config: {
     endpoint,
     headers: pluginHeaders,
-    serviceName
+    serviceName,
+    semconvDialect
   }
 };
 
@@ -390,7 +392,8 @@ process.stdout.write(diagChanges.join('|'));
   "$CMS_WORKSPACE" \
   "$SERVICE_NAME" \
   "$ENABLE_METRICS" \
-  "$DIAG_PLUGIN_NAME"
+  "$DIAG_PLUGIN_NAME" \
+  "$SEMCONV_DIALECT"
 )
 
 ok "Config updated"

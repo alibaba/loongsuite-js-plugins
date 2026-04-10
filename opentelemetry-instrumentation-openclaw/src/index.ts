@@ -391,6 +391,7 @@ const armsTracePlugin: OpenClawPlugin = {
       batchSize: (pluginConfig.batchSize as number) || 10,
       flushIntervalMs: (pluginConfig.flushIntervalMs as number) || 5000,
       enabledHooks: pluginConfig.enabledHooks as string[] | undefined,
+      semconvDialect: (pluginConfig.semconvDialect as "ALIBABA_CLOUD" | "ALIBABA_GROUP") || undefined,
     };
 
     const exporter = new ArmsExporter(api, config);

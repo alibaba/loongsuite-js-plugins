@@ -51,6 +51,7 @@ export interface ArmsTraceConfig {
   batchSize: number;
   flushIntervalMs: number;
   enabledHooks?: string[];
+  semconvDialect?: "ALIBABA_CLOUD" | "ALIBABA_GROUP";
 }
 
 export type SpanType =

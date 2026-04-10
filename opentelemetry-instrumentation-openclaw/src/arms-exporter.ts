@@ -24,13 +24,12 @@ import type {
 } from "./types.js";
 import { PLUGIN_VERSION } from "./version.js";
 
-// Semantic convention dialect:
-// LOONGSUITE_SEMCONV_DIALECT_NAME=ALIBABA_GROUP → gen_ai.span_kind_name
-// default (ALIBABA_CLOUD or unset)             → gen_ai.span.kind
-const SPAN_KIND_ATTR =
-  process.env["LOONGSUITE_SEMCONV_DIALECT_NAME"] === "ALIBABA_GROUP"
-    ? "gen_ai.span_kind_name"
-    : "gen_ai.span.kind";
+// Semantic convention dialect resolved per-instance from plugin config.
+// Falls back to env var LOONGSUITE_SEMCONV_DIALECT_NAME for compatibility.
+function resolveSpanKindAttr(dialect?: string): string {
+  const d = dialect ?? process.env["LOONGSUITE_SEMCONV_DIALECT_NAME"];
+  return d === "ALIBABA_GROUP" ? "gen_ai.span_kind_name" : "gen_ai.span.kind";
+}
 
 const MAX_ATTR_LENGTH = 3_200_000;
 
@@ -56,9 +55,12 @@ export class ArmsExporter {
 
   private openSpans = new Map<string, Span>();
 
+  private readonly spanKindAttr: string;
+
   constructor(api: OpenClawPluginApi, config: ArmsTraceConfig) {
     this.api = api;
     this.config = config;
+    this.spanKindAttr = resolveSpanKindAttr(config.semconvDialect);
   }
 
   async ensureInitialized(): Promise<void> {
@@ -138,7 +140,7 @@ export class ArmsExporter {
     const genAiSpanKind = this.mapGenAiSpanKind(spanData.type);
     const spanAttrs = this.flattenAttributes(spanData.attributes);
     if (genAiSpanKind) {
-      spanAttrs[SPAN_KIND_ATTR] = genAiSpanKind;
+      spanAttrs[this.spanKindAttr] = genAiSpanKind;
     }
 
     const span = this.tracer.startSpan(
@@ -205,7 +207,7 @@ export class ArmsExporter {
     const exportGenAiSpanKind = this.mapGenAiSpanKind(spanData.type);
     const exportSpanAttrs = this.flattenAttributes(spanData.attributes);
     if (exportGenAiSpanKind) {
-      exportSpanAttrs[SPAN_KIND_ATTR] = exportGenAiSpanKind;
+      exportSpanAttrs[this.spanKindAttr] = exportGenAiSpanKind;
     }
 
     const span = this.tracer.startSpan(
