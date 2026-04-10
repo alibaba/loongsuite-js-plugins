@@ -1,7 +1,6 @@
+#!/usr/bin/env node
 // Copyright 2026 Alibaba Group Holding Limited
 // SPDX-License-Identifier: Apache-2.0
-
-#!/usr/bin/env node
 import { Command } from "commander";
 import inquirer from "inquirer";
 import { execSync } from "node:child_process";
