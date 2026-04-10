@@ -30,7 +30,7 @@ LoongSuite includes the following key components:
 | [opentelemetry-instrumentation-claude](./opentelemetry-instrumentation-claude/) | Claude Code | Hook-based session tracing + in-process LLM call capture via `intercept.js` |
 | [opentelemetry-instrumentation-openclaw](./opentelemetry-instrumentation-openclaw/) | OpenClaw | Native gateway plugin: Traces + Metrics to any OTLP backend |
 
-Both plugins follow the [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) and work with any OTLP-compatible backend (Jaeger, Honeycomb, Grafana Tempo, Alibaba Cloud ARMS, etc.).
+Both plugins follow the [OpenTelemetry GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) and work with any OTLP-compatible backend (Jaeger, Honeycomb, Alibaba Sunfire, Grafana Tempo, Alibaba Cloud ARMS, etc.).
 
 ---
 
