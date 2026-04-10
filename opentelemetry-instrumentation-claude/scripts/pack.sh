@@ -28,26 +28,28 @@ echo ""
 # 创建 dist 目录
 mkdir -p "$DIST_DIR"
 
-# 打包（从包根目录，排除无关文件）
-# COPYFILE_DISABLE=1 防止 macOS 将 xattr 扩展属性打入 tarball，
-# 避免在 Linux 上解压时出现 "Ignoring unknown extended header keyword" 警告
+# 打包：先复制到临时目录再清除 xattr，避免安全扫描工具写入的
+# com.apple.provenance、FileXRayCachedResultInEA 等随 tarball 带到 Linux
+PACK_TMPDIR=$(mktemp -d)
+trap 'rm -rf "$PACK_TMPDIR"' EXIT
+
 cd "$PKG_DIR"
-COPYFILE_DISABLE=1 tar -czf "$OUTPUT" \
-    --exclude='node_modules' \
-    --exclude='coverage' \
-    --exclude='dist' \
-    --exclude='.git' \
-    --exclude='*.test.js' \
-    --exclude='test' \
-    --exclude='package-lock.json' \
-    bin \
-    src \
-    scripts/install.sh \
-    scripts/setup-alias.sh \
-    scripts/uninstall.sh \
-    package.json \
-    README.md \
-    LICENSE
+
+# macOS 的 cp -X 从复制阶段就不带 xattr
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  CP_FLAGS="-rX"
+else
+  CP_FLAGS="-r"
+fi
+
+cp $CP_FLAGS bin src package.json README.md LICENSE "$PACK_TMPDIR/"
+mkdir -p "$PACK_TMPDIR/scripts"
+cp $CP_FLAGS scripts/install.sh scripts/setup-alias.sh scripts/uninstall.sh "$PACK_TMPDIR/scripts/"
+
+# 双保险：清除所有残留 xattr
+xattr -cr "$PACK_TMPDIR" 2>/dev/null || true
+
+COPYFILE_DISABLE=1 tar -czf "$OUTPUT" -C "$PACK_TMPDIR" .
 
 SIZE=$(du -sh "$OUTPUT" | cut -f1)
 echo "✅ 打包完成: $OUTPUT ($SIZE)"

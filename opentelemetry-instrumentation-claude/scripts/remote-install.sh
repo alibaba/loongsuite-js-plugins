@@ -149,7 +149,12 @@ echo ""
 # Extract
 # ============================================================
 msg "==> 解压安装包..." "==> Extracting..."
-tar -xzf "$TMP_DIR/plugin.tar.gz" -C "$TMP_DIR"
+# GNU tar (Linux) 支持 --warning=no-unknown-keyword，过滤 macOS xattr 的无害警告
+if tar --warning=no-unknown-keyword -xzf "$TMP_DIR/plugin.tar.gz" -C "$TMP_DIR" 2>/dev/null; then
+  :
+else
+  tar -xzf "$TMP_DIR/plugin.tar.gz" -C "$TMP_DIR"
+fi
 
 if [ -d "$TMP_DIR/$PLUGIN_NAME" ]; then
     INSTALL_SRC="$TMP_DIR/$PLUGIN_NAME"
