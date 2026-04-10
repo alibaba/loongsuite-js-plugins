@@ -191,27 +191,10 @@ else
 fi
 
 # ── Remove Delta temporality env var from shell profiles ──
-DELTA_MARKER='# BEGIN openclaw-cms-plugin-delta-temporality'
-DELTA_MARKER_END='# END openclaw-cms-plugin-delta-temporality'
-
-remove_delta_env_from_file() {
-  local file="$1"
-  if [[ ! -f "$file" ]]; then
-    return
-  fi
-  if ! grep -q "$DELTA_MARKER" "$file" 2>/dev/null; then
-    return
-  fi
-  # Remove lines between markers (inclusive)
-  sed -i "/^${DELTA_MARKER}$/,/^${DELTA_MARKER_END}$/d" "$file"
-  # Also remove the blank line left before the block (if any)
-  sed -i -e '/^[[:space:]]*$/{N;/^\n[[:space:]]*$/d}' "$file" 2>/dev/null || true
-  ok "Removed delta temporality env from $file"
-}
-
-remove_delta_env_from_file "$HOME/.bashrc"
-remove_delta_env_from_file "$HOME/.zshrc"
-remove_delta_env_from_file "$HOME/.bash_profile"
+UNINSTALL_SCRIPT_DIR="$(dirname "$0")"
+if [[ -f "${UNINSTALL_SCRIPT_DIR}/setup-temporality.sh" ]]; then
+  bash "${UNINSTALL_SCRIPT_DIR}/setup-temporality.sh" --remove
+fi
 
 # ── Restart gateway ──
 OPENCLAW_CMD="openclaw"
@@ -238,7 +221,4 @@ else
   echo "  diagnostics-otel: Disabled"
 fi
 echo "  Metric tempo env: Removed from shell profiles"
-echo ""
-echo "  Please reload your shell or run:"
-echo "    source ~/.bashrc   # or ~/.zshrc"
 echo ""

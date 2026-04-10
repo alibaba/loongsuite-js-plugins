@@ -395,37 +395,7 @@ process.stdout.write(diagChanges.join('|'));
 ok "Config updated"
 
 # ── Write Delta temporality env var to shell profiles ──
-DELTA_ENV_LINE='export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta'
-DELTA_MARKER='# BEGIN openclaw-cms-plugin-delta-temporality'
-DELTA_MARKER_END='# END openclaw-cms-plugin-delta-temporality'
-DELTA_PROFILES_UPDATED=()
-
-add_delta_env_to_file() {
-  local file="$1"
-  if [[ ! -f "$file" ]]; then
-    return
-  fi
-  if grep -q "$DELTA_MARKER" "$file" 2>/dev/null; then
-    return
-  fi
-  cat >> "$file" << DELTA_BLOCK
-
-${DELTA_MARKER}
-${DELTA_ENV_LINE}
-${DELTA_MARKER_END}
-DELTA_BLOCK
-  DELTA_PROFILES_UPDATED+=("$file")
-}
-
-add_delta_env_to_file "$HOME/.bashrc"
-add_delta_env_to_file "$HOME/.zshrc"
-add_delta_env_to_file "$HOME/.bash_profile"
-
-if [[ ${#DELTA_PROFILES_UPDATED[@]} -gt 0 ]]; then
-  ok "Delta temporality env written to: ${DELTA_PROFILES_UPDATED[*]}"
-else
-  info "Delta temporality env already present in shell profiles (skipped)"
-fi
+bash "$(dirname "$0")/setup-temporality.sh" --install
 
 # ── Summary ──
 echo ""
