@@ -453,10 +453,15 @@ for _f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile"; do
   _upsert_env_block "$_f" "$_SEMCONV_MARKER" "$_SEMCONV_MARKER_END" "$_SEMCONV_ENV_LINE"
 done
 
-# 写入 shell profile 后，同步 export 到当前进程环境，
-# 确保下面的 gateway restart 继承到这两个 env var
-export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta
-export LOONGSUITE_SEMCONV_DIALECT_NAME="${SEMCONV_DIALECT}"
+# ── Inject env vars into systemd user session (systemd installs only) ──
+# shell profile writes don't reach the gateway process; systemctl set-environment does.
+if command -v systemctl &>/dev/null && systemctl --user is-active openclaw-gateway.service &>/dev/null 2>&1; then
+  info "Injecting env vars into systemd user session..."
+  systemctl --user set-environment \
+    OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta \
+    LOONGSUITE_SEMCONV_DIALECT_NAME="${SEMCONV_DIALECT}"
+  ok "Env vars set in systemd"
+fi
 
 # ── Restart gateway ──
 info "Restarting OpenClaw gateway..."
