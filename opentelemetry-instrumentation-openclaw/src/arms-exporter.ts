@@ -27,10 +27,14 @@ import { PLUGIN_VERSION } from "./version.js";
 // Semantic convention dialect:
 // LOONGSUITE_SEMCONV_DIALECT_NAME=ALIBABA_GROUP → gen_ai.span_kind_name
 // default (ALIBABA_CLOUD or unset)             → gen_ai.span.kind
-const SPAN_KIND_ATTR =
-  process.env["LOONGSUITE_SEMCONV_DIALECT_NAME"] === "ALIBABA_GROUP"
+// Auto-detect: endpoint containing "sunfire" implies ALIBABA_GROUP
+function resolveSpanKindAttr(dialect?: string, endpoint?: string): string {
+  const sunfireDetected = endpoint?.includes("sunfire") ?? false;
+  const d = dialect ?? process.env["LOONGSUITE_SEMCONV_DIALECT_NAME"];
+  return d === "ALIBABA_GROUP" || sunfireDetected
     ? "gen_ai.span_kind_name"
     : "gen_ai.span.kind";
+}
 
 const MAX_ATTR_LENGTH = 3_200_000;
 
@@ -53,12 +57,14 @@ export class ArmsExporter {
   private tracer: ReturnType<BasicTracerProvider["getTracer"]> | null = null;
   private initialized = false;
   private initPromise: Promise<void> | null = null;
+  private readonly spanKindAttr: string;
 
   private openSpans = new Map<string, Span>();
 
   constructor(api: OpenClawPluginApi, config: ArmsTraceConfig) {
     this.api = api;
     this.config = config;
+    this.spanKindAttr = resolveSpanKindAttr(config.semconvDialect, config.endpoint);
   }
 
   async ensureInitialized(): Promise<void> {
@@ -138,7 +144,7 @@ export class ArmsExporter {
     const genAiSpanKind = this.mapGenAiSpanKind(spanData.type);
     const spanAttrs = this.flattenAttributes(spanData.attributes);
     if (genAiSpanKind) {
-      spanAttrs[SPAN_KIND_ATTR] = genAiSpanKind;
+      spanAttrs[this.spanKindAttr] = genAiSpanKind;
     }
 
     const span = this.tracer.startSpan(
@@ -205,7 +211,7 @@ export class ArmsExporter {
     const exportGenAiSpanKind = this.mapGenAiSpanKind(spanData.type);
     const exportSpanAttrs = this.flattenAttributes(spanData.attributes);
     if (exportGenAiSpanKind) {
-      exportSpanAttrs[SPAN_KIND_ATTR] = exportGenAiSpanKind;
+      exportSpanAttrs[this.spanKindAttr] = exportGenAiSpanKind;
     }
 
     const span = this.tracer.startSpan(
