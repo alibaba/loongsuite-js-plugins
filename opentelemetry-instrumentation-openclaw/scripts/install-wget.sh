@@ -122,6 +122,13 @@ if ! command -v wget &>/dev/null; then
 fi
 ok "wget available"
 
+# ── Remove legacy install directory ──
+LEGACY_DIR="${HOME}/.openclaw/extensions/openclaw-cms-plugin"
+if [[ -d "$LEGACY_DIR" ]]; then
+  info "Removing legacy openclaw-cms-plugin directory..."
+  rm -rf "$LEGACY_DIR"
+fi
+
 # ── Determine install directory ──
 if [[ -n "$INSTALL_DIR" ]]; then
   TARGET_DIR="$INSTALL_DIR"
@@ -383,6 +390,18 @@ if (enableMetrics) {
   if (otel.logs === undefined) otel.logs = false;
 
   if (diagChanges.length === 0) diagChanges.push('no changes needed');
+}
+
+// ── Migration: remove legacy 'openclaw-cms-plugin' entries ──
+const LEGACY_PLUGIN_NAME = 'openclaw-cms-plugin';
+if (config.plugins.allow && Array.isArray(config.plugins.allow)) {
+  config.plugins.allow = config.plugins.allow.filter(id => id !== LEGACY_PLUGIN_NAME);
+}
+if (config.plugins.entries && config.plugins.entries[LEGACY_PLUGIN_NAME]) {
+  delete config.plugins.entries[LEGACY_PLUGIN_NAME];
+}
+if (config.plugins.load && Array.isArray(config.plugins.load.paths)) {
+  config.plugins.load.paths = config.plugins.load.paths.filter(p => !p.includes(LEGACY_PLUGIN_NAME));
 }
 
 fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n', 'utf8');
