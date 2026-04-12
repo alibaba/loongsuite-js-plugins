@@ -1,5 +1,5 @@
 {
-  "id": "openclaw-cms-plugin",
+  "id": "opentelemetry-instrumentation-openclaw",
   "name": "OpenClaw OTel Plugin",
   "version": "0.1.2",
   "description": "Report OpenClaw AI agent execution traces to any OTLP-compatible backend via OpenTelemetry",

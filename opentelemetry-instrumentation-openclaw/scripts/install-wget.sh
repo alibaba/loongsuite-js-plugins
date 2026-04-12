@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# openclaw-cms-plugin one-line installer (wget variant)
+# opentelemetry-instrumentation-openclaw one-line installer (wget variant)
 #
 # Does NOT require OpenClaw to be installed beforehand.
 # Does NOT restart the OpenClaw gateway — the user must do so manually.
@@ -15,7 +15,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-PLUGIN_NAME="openclaw-cms-plugin"
+PLUGIN_NAME="opentelemetry-instrumentation-openclaw"
 DIAG_PLUGIN_NAME="diagnostics-otel"
 # ── Replace with your actual OSS URL after uploading ──
 DEFAULT_PLUGIN_URL="https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/openclaw-cms-plugin/openclaw-cms-plugin.tar.gz"
@@ -168,7 +168,7 @@ else
 fi
 ok "Extracted"
 
-# ── Install npm dependencies for openclaw-cms-plugin ──
+# ── Install npm dependencies for opentelemetry-instrumentation-openclaw ──
 info "Installing npm dependencies (production only)..."
 cd "$TARGET_DIR"
 if ! npm install --omit=dev --ignore-scripts 2>&1; then
@@ -289,13 +289,13 @@ try {
 
 if (!config.plugins) config.plugins = {};
 
-// ── openclaw-cms-plugin: plugins.allow ──
+// ── opentelemetry-instrumentation-openclaw: plugins.allow ──
 if (!Array.isArray(config.plugins.allow)) config.plugins.allow = [];
 if (!config.plugins.allow.includes(pluginName)) {
   config.plugins.allow.push(pluginName);
 }
 
-// ── openclaw-cms-plugin: plugins.load.paths ──
+// ── opentelemetry-instrumentation-openclaw: plugins.load.paths ──
 if (!config.plugins.load) config.plugins.load = {};
 if (!Array.isArray(config.plugins.load.paths)) config.plugins.load.paths = [];
 const paths = config.plugins.load.paths;
@@ -303,7 +303,7 @@ const idx = paths.findIndex(p => p.includes(pluginName));
 if (idx >= 0) paths[idx] = installDir;
 else paths.push(installDir);
 
-// ── openclaw-cms-plugin: plugins.entries ──
+// ── opentelemetry-instrumentation-openclaw: plugins.entries ──
 if (!config.plugins.entries) config.plugins.entries = {};
 const pluginHeaders = {};
 if (licenseKey) pluginHeaders['x-arms-license-key'] = licenseKey;
@@ -433,7 +433,7 @@ done
 # ── Summary ──
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  ✅ openclaw-cms-plugin installed successfully!${NC}"
+echo -e "${GREEN}  ✅ opentelemetry-instrumentation-openclaw installed successfully!${NC}"
 echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
 echo ""
 echo "  Install dir:   ${TARGET_DIR}"
@@ -483,7 +483,7 @@ if [[ "$ENABLE_METRICS" == true ]]; then
   if [[ "$CURRENT_TRACES" == "true" ]]; then
     echo ""
     echo -e "  ${YELLOW}⚠ diagnostics.otel.traces is enabled.${NC}"
-    echo -e "  ${YELLOW}  openclaw-cms-plugin already handles trace reporting to ARMS.${NC}"
+    echo -e "  ${YELLOW}  opentelemetry-instrumentation-openclaw already handles trace reporting to ARMS.${NC}"
     echo -e "  ${YELLOW}  Having both enabled may cause duplicate traces.${NC}"
   fi
   echo ""

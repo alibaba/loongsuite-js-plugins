@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# openclaw-cms-plugin one-line uninstaller
+# opentelemetry-instrumentation-openclaw one-line uninstaller
 #
 # Usage:
 #   curl -fsSL https://<oss-host>/uninstall.sh | bash
@@ -10,7 +10,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-PLUGIN_NAME="openclaw-cms-plugin"
+PLUGIN_NAME="opentelemetry-instrumentation-openclaw"
 DIAG_PLUGIN_NAME="diagnostics-otel"
 SKIP_CONFIRM=false
 INSTALL_DIR=""
@@ -71,7 +71,7 @@ fi
 # ── Summary ──
 echo ""
 echo -e "${CYAN}══════════════════════════════════════════════════${NC}"
-echo -e "${CYAN}  openclaw-cms-plugin uninstaller${NC}"
+echo -e "${CYAN}  opentelemetry-instrumentation-openclaw uninstaller${NC}"
 echo -e "${CYAN}══════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -133,7 +133,7 @@ try {
 
 if (!config.plugins) { process.exit(0); }
 
-// ── Remove openclaw-cms-plugin ──
+// ── Remove opentelemetry-instrumentation-openclaw ──
 if (Array.isArray(config.plugins.allow)) {
   config.plugins.allow = config.plugins.allow.filter(n => n !== pluginName);
 }
@@ -224,7 +224,7 @@ fi
 # ── Done ──
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  ✅ openclaw-cms-plugin uninstalled successfully!${NC}"
+echo -e "${GREEN}  ✅ opentelemetry-instrumentation-openclaw uninstalled successfully!${NC}"
 echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
 echo ""
 if [[ "$KEEP_METRICS" == true ]]; then
