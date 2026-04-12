@@ -150,10 +150,8 @@ if [[ -d "$TARGET_DIR" ]]; then
     info "Removing previous installation..."
     rm -rf "$TARGET_DIR"
   else
-    error "Target directory exists but does not look like a plugin installation: ${TARGET_DIR}"
-    error "Expected package.json or openclaw.plugin.json inside the directory."
-    error "Please verify --install-dir or remove the directory manually."
-    exit 1
+    info "Target directory exists but does not look like a plugin installation, removing..."
+    rm -rf "$TARGET_DIR"
   fi
 fi
 mkdir -p "$TARGET_DIR"
