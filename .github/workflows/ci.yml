@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         working-directory: opentelemetry-instrumentation-claude
         run: npm ci
+      - name: Security audit
+        working-directory: opentelemetry-instrumentation-claude
+        run: npm audit --audit-level=high --registry=https://registry.npmjs.org
       - name: Run tests
         working-directory: opentelemetry-instrumentation-claude
         run: npm test -- --coverage
@@ -45,6 +48,9 @@ jobs:
       - name: Install dependencies
         working-directory: opentelemetry-instrumentation-openclaw
         run: npm ci
+      - name: Security audit
+        working-directory: opentelemetry-instrumentation-openclaw
+        run: npm audit --audit-level=high --registry=https://registry.npmjs.org
       - name: Build
         working-directory: opentelemetry-instrumentation-openclaw
         run: npm run build
