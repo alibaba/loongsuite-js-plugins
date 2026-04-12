@@ -114,12 +114,14 @@ describe("armsTracePlugin.activate", () => {
     );
   });
 
-  it("logs error and returns early when license key is missing", () => {
+  it("activates successfully when license key is missing (license key is optional)", () => {
+    // x-arms-license-key is optional — plugin should activate without error
     const api = makeApi({ headers: {} });
     armsTracePlugin.activate(api);
-    expect(api.logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("x-arms-license-key")
-    );
+    expect(api.logger.error).not.toHaveBeenCalled();
+    // hooks should still be registered
+    const hookNames = vi.mocked(api.on).mock.calls.map(([name]) => name);
+    expect(hookNames.length).toBeGreaterThan(0);
   });
 
   it("registers gateway_stop hook", () => {
