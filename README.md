@@ -66,7 +66,7 @@ The script automatically installs hooks, sets up the `claude` alias, and writes 
 ### OpenClaw — one-line install
 
 ```bash
-curl -fsSL https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/openclaw-cms-plugin/install.sh | bash -s -- \
+curl -fsSL https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/opentelemetry-instrumentation-openclaw/install.sh | bash -s -- \
   --endpoint "https://your-otlp-endpoint:4318" \
   --serviceName "my-openclaw-agent"
 ```

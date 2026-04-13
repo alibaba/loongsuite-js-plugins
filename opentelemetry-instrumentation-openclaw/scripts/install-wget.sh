@@ -18,7 +18,7 @@ set -euo pipefail
 PLUGIN_NAME="opentelemetry-instrumentation-openclaw"
 DIAG_PLUGIN_NAME="diagnostics-otel"
 # ── Replace with your actual OSS URL after uploading ──
-DEFAULT_PLUGIN_URL="https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/openclaw-cms-plugin/openclaw-cms-plugin.tar.gz"
+DEFAULT_PLUGIN_URL="https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/opentelemetry-instrumentation-openclaw/openclaw-cms-plugin.tar.gz"
 
 # ── Defaults ──
 ENDPOINT=""
