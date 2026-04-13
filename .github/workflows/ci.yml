@@ -23,7 +23,7 @@ jobs:
           cache-dependency-path: opentelemetry-instrumentation-claude/package-lock.json
       - name: Install dependencies
         working-directory: opentelemetry-instrumentation-claude
-        run: npm ci
+        run: npm ci --registry=https://registry.npmjs.org
       - name: Security audit
         working-directory: opentelemetry-instrumentation-claude
         run: npm audit --audit-level=high --registry=https://registry.npmjs.org
@@ -47,7 +47,7 @@ jobs:
           cache-dependency-path: opentelemetry-instrumentation-openclaw/package-lock.json
       - name: Install dependencies
         working-directory: opentelemetry-instrumentation-openclaw
-        run: npm ci
+        run: npm ci --registry=https://registry.npmjs.org
       - name: Security audit
         working-directory: opentelemetry-instrumentation-openclaw
         run: npm audit --audit-level=high --registry=https://registry.npmjs.org
