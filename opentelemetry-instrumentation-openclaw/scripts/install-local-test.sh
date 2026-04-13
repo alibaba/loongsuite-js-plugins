@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # ---------------------------------------------------------------------------
-# openclaw-cms-plugin local test installer
+# opentelemetry-instrumentation-openclaw local test installer
 #
 # Install plugin from a local tar.gz package for testing.
 #
 # Usage:
 #   bash ./scripts/install-local-test.sh
 #   bash ./scripts/install-local-test.sh --serviceName "my-openclaw-cms"
-#   bash ./scripts/install-local-test.sh --plugin-file "/path/to/openclaw-cms-plugin.tar.gz"
+#   bash ./scripts/install-local-test.sh --plugin-file "/path/to/opentelemetry-instrumentation-openclaw.tar.gz"
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-PLUGIN_NAME="openclaw-cms-plugin"
+PLUGIN_NAME="opentelemetry-instrumentation-openclaw"
 DIAG_PLUGIN_NAME="diagnostics-otel"
-DEFAULT_PLUGIN_FILE="./release/openclaw-cms-plugin.tar.gz"
+DEFAULT_PLUGIN_FILE="./release/opentelemetry-instrumentation-openclaw.tar.gz"
 
 # ── Defaults (can be overridden by CLI args) ──
 ENDPOINT="https://your-otlp-endpoint/apm/trace/opentelemetry"
@@ -302,7 +302,7 @@ fi
 
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
-echo -e "${GREEN}  ✅ openclaw-cms-plugin local test install complete${NC}"
+echo -e "${GREEN}  ✅ opentelemetry-instrumentation-openclaw local test install complete${NC}"
 echo -e "${GREEN}════════════════════════════════════════════════════${NC}"
 echo ""
 echo "  Plugin package: ${PLUGIN_FILE}"

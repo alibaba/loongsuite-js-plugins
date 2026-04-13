@@ -9,8 +9,9 @@ import os from "node:os";
 import path from "node:path";
 import { PLUGIN_VERSION } from "./version.js";
 
-const PLUGIN_NAME = "openclaw-cms-plugin";
-const PACKAGE_PATH = "@openclaw/cms-plugin";
+const PLUGIN_NAME = "opentelemetry-instrumentation-openclaw";
+const LEGACY_PLUGIN_NAME = "openclaw-cms-plugin";
+const PACKAGE_PATH = "@loongsuite/opentelemetry-instrumentation-openclaw";
 
 function getOpenClawDir(): string {
   return process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), ".openclaw");
@@ -70,7 +71,9 @@ interface ArmsPluginConfig {
 
 async function collectPluginConfig(): Promise<ArmsPluginConfig> {
   const config = await readConfig();
-  const existingEntry = config.plugins?.entries?.[PLUGIN_NAME];
+  const existingEntry =
+    config.plugins?.entries?.[PLUGIN_NAME]
+    || config.plugins?.entries?.[LEGACY_PLUGIN_NAME];
   const existingConfig = existingEntry?.config || {};
 
   const answers = await inquirer.prompt([
@@ -168,18 +171,36 @@ async function updateOpenClawConfig(
     serviceName: pluginConfig.serviceName,
   };
 
+  if (config.plugins.entries?.[LEGACY_PLUGIN_NAME]) {
+    delete config.plugins.entries[LEGACY_PLUGIN_NAME];
+  }
+  if (Array.isArray(config.plugins.allow)) {
+    config.plugins.allow = config.plugins.allow.filter(
+      (name: string) => name !== LEGACY_PLUGIN_NAME,
+    );
+  }
+  if (Array.isArray(config.plugins.load?.paths)) {
+    config.plugins.load.paths = config.plugins.load.paths.filter(
+      (p: string) => !p.includes(LEGACY_PLUGIN_NAME),
+    );
+  }
+
   await writeConfig(config);
 }
 
 async function clearPluginConfig(): Promise<void> {
   const config = await readConfig();
   if (!config.plugins) return;
-  if (config.plugins.entries?.[PLUGIN_NAME]) {
-    delete config.plugins.entries[PLUGIN_NAME];
-  }
+  if (config.plugins.entries?.[PLUGIN_NAME]) delete config.plugins.entries[PLUGIN_NAME];
+  if (config.plugins.entries?.[LEGACY_PLUGIN_NAME]) delete config.plugins.entries[LEGACY_PLUGIN_NAME];
   if (config.plugins.allow) {
     config.plugins.allow = config.plugins.allow.filter(
-      (name: string) => name !== PLUGIN_NAME,
+      (name: string) => name !== PLUGIN_NAME && name !== LEGACY_PLUGIN_NAME,
+    );
+  }
+  if (Array.isArray(config.plugins.load?.paths)) {
+    config.plugins.load.paths = config.plugins.load.paths.filter(
+      (p: string) => !p.includes(PLUGIN_NAME) && !p.includes(LEGACY_PLUGIN_NAME),
     );
   }
   await writeConfig(config);
@@ -190,10 +211,14 @@ async function clearInstalledPlugin(): Promise<void> {
   const installPath = config.installs?.[PLUGIN_NAME]?.installPath;
   if (installPath) {
     await fs.rm(installPath, { recursive: true, force: true });
-    return;
   }
-  const fallbackPath = path.join(getExtensionsDir(), PLUGIN_NAME);
-  await fs.rm(fallbackPath, { recursive: true, force: true });
+  const fallbackPaths = [
+    path.join(getExtensionsDir(), PLUGIN_NAME),
+    path.join(getExtensionsDir(), LEGACY_PLUGIN_NAME),
+  ];
+  for (const fallbackPath of fallbackPaths) {
+    await fs.rm(fallbackPath, { recursive: true, force: true });
+  }
 }
 
 function resolveLocalPluginDir(): string {
@@ -246,14 +271,14 @@ async function restartGateway(): Promise<void> {
 }
 
 async function handleInstall(): Promise<void> {
-  console.log("\n🔧 OpenClaw CMS Plugin 插件安装向导\n");
+  console.log("\n🔧 OpenClaw OTel Plugin 插件安装向导\n");
   const pluginConfig = await collectPluginConfig();
   await clearPluginConfig();
   await clearInstalledPlugin();
   await installPlugin();
   await updateOpenClawConfig(pluginConfig);
   await restartGateway();
-  console.log("\n✅ 安装完成，openclaw-cms-plugin 已启用");
+  console.log(`\n✅ 安装完成，${PLUGIN_NAME} 已启用（兼容旧 ID ${LEGACY_PLUGIN_NAME}）`);
   console.log(
     `   Endpoint: ${pluginConfig.endpoint}`,
   );
@@ -263,7 +288,7 @@ async function handleInstall(): Promise<void> {
 }
 
 async function handleConfigOnly(): Promise<void> {
-  console.log("\n🔧 OpenClaw CMS Plugin 配置更新\n");
+  console.log("\n🔧 OpenClaw OTel Plugin 配置更新\n");
   const pluginConfig = await collectPluginConfig();
   await updateOpenClawConfig(pluginConfig);
   console.log("\n✅ 配置已更新");
@@ -272,13 +297,13 @@ async function handleConfigOnly(): Promise<void> {
 
 const program = new Command();
 program
-  .name("openclaw-cms-plugin-onboard-cli")
+  .name("openclaw-otel-plugin-onboard-cli")
   .version(PLUGIN_VERSION)
-  .description("一键安装 / 配置 OpenClaw CMS Trace 插件");
+  .description("一键安装 / 配置 OpenClaw OTel Trace 插件");
 
 program
   .command("install", { isDefault: true })
-  .description("一键安装 openclaw-cms-plugin 插件并配置 CMS 连接")
+  .description("一键安装 opentelemetry-instrumentation-openclaw 插件并配置 OTLP 连接")
   .action(async () => {
     try {
       await handleInstall();

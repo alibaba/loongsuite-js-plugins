@@ -15,7 +15,7 @@ set -euo pipefail
 PLUGIN_NAME="opentelemetry-instrumentation-openclaw"
 DIAG_PLUGIN_NAME="diagnostics-otel"
 # ── Replace with your actual OSS URL after uploading ──
-DEFAULT_PLUGIN_URL="https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/opentelemetry-instrumentation-openclaw/openclaw-cms-plugin.tar.gz"
+DEFAULT_PLUGIN_URL="https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/opentelemetry-instrumentation-openclaw/opentelemetry-instrumentation-openclaw.tar.gz"
 
 # ── Defaults ──
 ENDPOINT=""
@@ -464,16 +464,16 @@ _upsert_env_block() {
 }
 
 # ── Write Delta temporality env var to shell profiles ──
-_DELTA_MARKER='# BEGIN openclaw-cms-plugin-delta-temporality'
-_DELTA_MARKER_END='# END openclaw-cms-plugin-delta-temporality'
+_DELTA_MARKER='# BEGIN opentelemetry-instrumentation-openclaw-delta-temporality'
+_DELTA_MARKER_END='# END opentelemetry-instrumentation-openclaw-delta-temporality'
 _DELTA_ENV_LINE='export OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta'
 for _f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile"; do
   _upsert_env_block "$_f" "$_DELTA_MARKER" "$_DELTA_MARKER_END" "$_DELTA_ENV_LINE"
 done
 
 # ── Write semconv dialect env var to shell profiles ──
-_SEMCONV_MARKER='# BEGIN openclaw-cms-plugin-semconv-dialect'
-_SEMCONV_MARKER_END='# END openclaw-cms-plugin-semconv-dialect'
+_SEMCONV_MARKER='# BEGIN opentelemetry-instrumentation-openclaw-semconv-dialect'
+_SEMCONV_MARKER_END='# END opentelemetry-instrumentation-openclaw-semconv-dialect'
 _SEMCONV_ENV_LINE="export LOONGSUITE_SEMCONV_DIALECT_NAME=${SEMCONV_DIALECT}"
 for _f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile"; do
   _upsert_env_block "$_f" "$_SEMCONV_MARKER" "$_SEMCONV_MARKER_END" "$_SEMCONV_ENV_LINE"

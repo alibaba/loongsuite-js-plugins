@@ -1,6 +1,6 @@
 # 更新日志
 
-本文档记录 `openclaw-cms-plugin` 的重要变更。
+本文档记录 `opentelemetry-instrumentation-openclaw` 的重要变更。
 
 ## [0.1.2] - 2026-03-26
 
