@@ -366,7 +366,7 @@ type PendingAssistantMessage = {
 // ---------------------------------------------------------------------------
 
 const armsTracePlugin: OpenClawPlugin = {
-  id: "openclaw-cms-plugin",
+  id: "opentelemetry-instrumentation-openclaw",
   name: "OpenClaw CMS Plugin",
   version: PLUGIN_VERSION,
   description:
