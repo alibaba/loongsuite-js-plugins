@@ -82,7 +82,7 @@ function makeApi(pluginConfig: Record<string, unknown> = {}): OpenClawPluginApi 
 
 describe("armsTracePlugin metadata", () => {
   it("has correct id", () => {
-    expect(armsTracePlugin.id).toBe("openclaw-cms-plugin");
+    expect(armsTracePlugin.id).toBe("opentelemetry-instrumentation-openclaw");
   });
 
   it("has a name", () => {
@@ -111,6 +111,30 @@ describe("armsTracePlugin.activate", () => {
     armsTracePlugin.activate(api);
     expect(api.logger.error).toHaveBeenCalledWith(
       expect.stringContaining("endpoint")
+    );
+  });
+
+  it("falls back to legacy openclaw-cms-plugin entry config", () => {
+    const api = makeApi({ endpoint: undefined });
+    api.config = {
+      plugins: {
+        entries: {
+          "openclaw-cms-plugin": {
+            enabled: true,
+            config: {
+              endpoint: "https://legacy-endpoint.example.com:4318",
+              headers: { "x-arms-license-key": "legacy-key" },
+              serviceName: "legacy-svc",
+            },
+          },
+        },
+      },
+    };
+
+    armsTracePlugin.activate(api);
+    expect(api.logger.error).not.toHaveBeenCalled();
+    expect(api.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Using legacy 'openclaw-cms-plugin' configuration fallback")
     );
   });
 

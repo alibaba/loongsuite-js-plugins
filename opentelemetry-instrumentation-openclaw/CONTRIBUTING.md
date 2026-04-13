@@ -45,7 +45,7 @@ Enable debug logging in `~/.openclaw/openclaw.json`:
 {
   "plugins": {
     "entries": {
-      "openclaw-cms-plugin": {
+      "opentelemetry-instrumentation-openclaw": {
         "enabled": true,
         "config": {
           "debug": true

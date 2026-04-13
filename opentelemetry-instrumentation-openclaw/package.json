@@ -30,7 +30,8 @@
     "openclaw.plugin.json"
   ],
   "bin": {
-    "openclaw-cms-plugin-onboard-cli": "./dist/onboard-cli.js"
+    "openclaw-cms-plugin-onboard-cli": "./dist/onboard-cli.js",
+    "openclaw-otel-plugin-onboard-cli": "./dist/onboard-cli.js"
   },
   "scripts": {
     "build": "tsc",

@@ -19,7 +19,7 @@ Spans follow the [OpenTelemetry GenAI semantic conventions](https://opentelemetr
 
 The install script sets up two components:
 
-1. **openclaw-cms-plugin** — Downloads, extracts, installs dependencies, and writes plugin config (Trace reporting)
+1. **opentelemetry-instrumentation-openclaw** — Downloads, extracts, installs dependencies, and writes plugin config (Trace reporting)
 2. **diagnostics-otel** — Locates the built-in OpenClaw extension and enables Metrics collection
 
 ```bash
@@ -46,7 +46,7 @@ If your OTLP backend requires authentication headers, pass them to the plugin co
 {
   "plugins": {
     "entries": {
-      "openclaw-cms-plugin": {
+      "opentelemetry-instrumentation-openclaw": {
         "enabled": true,
         "config": {
           "endpoint": "https://your-otlp-endpoint:4318",
@@ -92,10 +92,10 @@ If you prefer to configure manually, edit `~/.openclaw/openclaw.json`:
 ```json
 {
   "plugins": {
-    "allow": ["openclaw-cms-plugin", "diagnostics-otel"],
-    "load": { "paths": ["/path/to/openclaw-cms-plugin"] },
+    "allow": ["opentelemetry-instrumentation-openclaw", "diagnostics-otel"],
+    "load": { "paths": ["/path/to/opentelemetry-instrumentation-openclaw"] },
     "entries": {
-      "openclaw-cms-plugin": {
+      "opentelemetry-instrumentation-openclaw": {
         "enabled": true,
         "config": {
           "endpoint": "https://your-otlp-endpoint:4318",
@@ -127,7 +127,9 @@ If you prefer to configure manually, edit `~/.openclaw/openclaw.json`:
 }
 ```
 
-> **Note**: Set `diagnostics.otel.traces: false` to avoid duplicate traces — `openclaw-cms-plugin` already handles trace reporting.
+> **Note**: Set `diagnostics.otel.traces: false` to avoid duplicate traces — `opentelemetry-instrumentation-openclaw` already handles trace reporting.
+
+> **Migration compatibility**: Existing `openclaw-cms-plugin` users can upgrade in place. The installer migrates old config entries to the new plugin ID automatically.
 
 ---
 

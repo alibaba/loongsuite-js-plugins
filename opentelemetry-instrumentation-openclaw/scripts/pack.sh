@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLUGIN_NAME="openclaw-cms-plugin"
+PLUGIN_NAME="opentelemetry-instrumentation-openclaw"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 OUTPUT_DIR="${PROJECT_DIR}/release"

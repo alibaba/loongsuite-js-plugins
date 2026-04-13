@@ -42,6 +42,8 @@ const CONTEXT_MAX_AGE_MS = 20 * 60 * 1_000; // 20 minutes
 const CONTEXT_SWEEP_INTERVAL_MS = 10 * 60 * 1_000; // 10 minutes
 const TEMP_RUN_ID_PREFIX = "run-";
 const PENDING_ASSISTANT_TTL_MS = 15_000;
+const CANONICAL_PLUGIN_ID = "opentelemetry-instrumentation-openclaw";
+const LEGACY_PLUGIN_ID = "openclaw-cms-plugin";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,6 +71,32 @@ function truncateAttr(value: string): string {
   return value.length > MAX_ATTR_LENGTH
     ? value.substring(0, MAX_ATTR_LENGTH)
     : value;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function getPluginEntryConfig(apiConfig: Record<string, unknown>, pluginId: string): Record<string, unknown> | undefined {
+  const plugins = asRecord(apiConfig.plugins);
+  const entries = asRecord(plugins?.entries);
+  const entry = asRecord(entries?.[pluginId]);
+  return asRecord(entry?.config);
+}
+
+function mergeDefinedValues(
+  base: Record<string, unknown>,
+  overlay: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(overlay)) {
+    if (value !== undefined) {
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 function toSpecParts(content: unknown): Array<Record<string, unknown>> {
@@ -366,31 +394,40 @@ type PendingAssistantMessage = {
 // ---------------------------------------------------------------------------
 
 const armsTracePlugin: OpenClawPlugin = {
-  id: "opentelemetry-instrumentation-openclaw",
+  id: CANONICAL_PLUGIN_ID,
   name: "OpenClaw CMS Plugin",
   version: PLUGIN_VERSION,
   description:
     "Report OpenClaw AI agent execution traces to Alibaba Cloud CMS via OpenTelemetry",
 
   activate(api: OpenClawPluginApi) {
-    const pluginConfig = api.pluginConfig || {};
+    const pluginConfig = asRecord(api.pluginConfig) || {};
+    const legacyConfig = getPluginEntryConfig(api.config, LEGACY_PLUGIN_ID);
+    const resolvedConfig = mergeDefinedValues(legacyConfig || {}, pluginConfig);
     const endpoint = pluginConfig.endpoint as string | undefined;
-    const headers = pluginConfig.headers as Record<string, string> | undefined;
+    const endpointResolved = resolvedConfig.endpoint as string | undefined;
+    const headers = resolvedConfig.headers as Record<string, string> | undefined;
 
-    if (!endpoint) {
+    if (!endpoint && endpointResolved && legacyConfig) {
+      api.logger.warn(
+        `[ArmsTrace] Using legacy '${LEGACY_PLUGIN_ID}' configuration fallback. Please migrate to '${CANONICAL_PLUGIN_ID}'.`,
+      );
+    }
+
+    if (!endpointResolved) {
       api.logger.error(
         "[ArmsTrace] Missing required configuration: 'endpoint' must be provided",
       );
       return;
     }
     const config: ArmsTraceConfig = {
-      endpoint,
+      endpoint: endpointResolved,
       headers: headers || {},
-      serviceName: (pluginConfig.serviceName as string) || "openclaw-agent",
-      debug: (pluginConfig.debug as boolean) || false,
-      batchSize: (pluginConfig.batchSize as number) || 10,
-      flushIntervalMs: (pluginConfig.flushIntervalMs as number) || 5000,
-      enabledHooks: pluginConfig.enabledHooks as string[] | undefined,
+      serviceName: (resolvedConfig.serviceName as string) || "openclaw-agent",
+      debug: (resolvedConfig.debug as boolean) || false,
+      batchSize: (resolvedConfig.batchSize as number) || 10,
+      flushIntervalMs: (resolvedConfig.flushIntervalMs as number) || 5000,
+      enabledHooks: resolvedConfig.enabledHooks as string[] | undefined,
     };
 
     const exporter = new ArmsExporter(api, config);
@@ -989,6 +1026,10 @@ const armsTracePlugin: OpenClawPlugin = {
         typeof message.timestamp === "number" && Number.isFinite(message.timestamp)
           ? message.timestamp
           : Date.now();
+      // Use hook processing time as the end boundary to avoid under-reporting
+      // when message.timestamp is written earlier in the pipeline.
+      const hookNow = Date.now();
+      const llmEndTime = hookNow > messageTs ? hookNow : messageTs;
       const toolCalls = extractAssistantToolCalls(message.content);
       const outputTexts = extractAssistantTexts(message.content);
       const stopReason =
@@ -1002,7 +1043,7 @@ const armsTracePlugin: OpenClawPlugin = {
       }
 
       await exportPendingLlmSpan(ctx, channelId, {
-        endTime: messageTs,
+        endTime: llmEndTime,
         outputTexts,
         outputContent: message.content,
         stopReason,
@@ -1378,6 +1419,11 @@ const armsTracePlugin: OpenClawPlugin = {
             event.runId,
             "llm_input",
           );
+          // Record LLM segment start as early as possible in this hook to
+          // reduce timing skew from later async awaits.
+          const llmInputStartedAt = Date.now();
+          ctx.llmPendingStartTime = llmInputStartedAt;
+          ctx.llmPendingSpanId = generateId(16);
 
           if (event.sessionId) {
             ctx.sessionId = event.sessionId;
@@ -1404,9 +1450,7 @@ const armsTracePlugin: OpenClawPlugin = {
           if (rawChannelId.startsWith("agent/")) {
             activeContextByAgentChannel.set(rawChannelId, ctx);
           }
-          ctx.llmPendingStartTime = Date.now();
-          ctx.llmPendingSpanId = generateId(16);
-          await ensureStepSpan(ctx, channelId, ctx.llmPendingStartTime);
+          await ensureStepSpan(ctx, channelId, llmInputStartedAt);
           ctx.llmPendingToolCallIds.clear();
           ctx.llmPendingToolCallCountFallback = 0;
 

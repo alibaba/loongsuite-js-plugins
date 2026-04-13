@@ -204,8 +204,14 @@ for _f in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.bash_profile"; do
     '# BEGIN openclaw-cms-plugin-delta-temporality' \
     '# END openclaw-cms-plugin-delta-temporality'
   _remove_block_from_file "$_f" \
+    '# BEGIN opentelemetry-instrumentation-openclaw-delta-temporality' \
+    '# END opentelemetry-instrumentation-openclaw-delta-temporality'
+  _remove_block_from_file "$_f" \
     '# BEGIN openclaw-cms-plugin-semconv-dialect' \
     '# END openclaw-cms-plugin-semconv-dialect'
+  _remove_block_from_file "$_f" \
+    '# BEGIN opentelemetry-instrumentation-openclaw-semconv-dialect' \
+    '# END opentelemetry-instrumentation-openclaw-semconv-dialect'
 done
 
 # ── Restart gateway ──
