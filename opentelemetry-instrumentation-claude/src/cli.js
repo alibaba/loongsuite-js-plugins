@@ -575,9 +575,11 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
     const claudePid = resolveClaudePid();
     const proxyEvents = readProxyEvents(startTime, stopTime, true, claudePid);
     if (proxyEvents.length > 0) {
-      events = [...events, ...proxyEvents].sort(
-        (a, b) => (a.timestamp || 0) - (b.timestamp || 0)
-      );
+      const getSortKey = (e) => {
+        if (e.type === "llm_call" && e.request_start_time) return e.request_start_time;
+        return e.timestamp || 0;
+      };
+      events = [...events, ...proxyEvents].sort((a, b) => getSortKey(a) - getSortKey(b));
     }
   } catch {}
 
