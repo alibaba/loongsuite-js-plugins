@@ -230,7 +230,7 @@ if [ -n "$ENDPOINT" ]; then
 
     write_env_block() {
         local file="$1"
-        [ -f "$file" ] || return
+        [ -f "$file" ] || return 0
         # Remove existing block if present
         if grep -q "# BEGIN otel-claude-hook-env" "$file" 2>/dev/null; then
             local tmp_clean
@@ -247,9 +247,9 @@ ENVBLOCK
         msg "    ✅ 已写入 $file" "    ✅ Written to $file"
     }
 
-    write_env_block "$HOME/.bashrc"
-    write_env_block "$HOME/.zshrc"
-    write_env_block "$HOME/.bash_profile"
+    write_env_block "$HOME/.bashrc"       || true
+    write_env_block "$HOME/.zshrc"        || true
+    write_env_block "$HOME/.bash_profile" || true
 fi
 
 # ============================================================
