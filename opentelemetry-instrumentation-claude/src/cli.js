@@ -568,6 +568,12 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
 
   const tracer = trace.getTracer("opentelemetry-instrumentation-claude");
 
+  // Wait briefly to allow any in-flight intercept.js stream consumers to finish
+  // writing their events to the proxy file before we read and delete it.
+  // consumeStreamAndLog is called without await, so it may still be running
+  // concurrently when the Stop hook fires.
+  await new Promise(resolve => setTimeout(resolve, 800));
+
   // Merge proxy events from intercept.js.
   // resolveClaudePid() walks the process tree to find the claude PID whose
   // proxy_events_<pid>.jsonl file we should read and delete.
