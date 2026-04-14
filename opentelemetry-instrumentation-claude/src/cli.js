@@ -196,6 +196,25 @@ function resolveClaudePid() {
 function readProxyEvents(startTime, stopTime, deleteAfterRead = false, pid = null) {
   if (!fs.existsSync(PROXY_EVENTS_DIR)) return [];
 
+  // Cleanup stale proxy files from dead processes
+  try {
+    const allFiles = fs.readdirSync(PROXY_EVENTS_DIR)
+      .filter(f => f.startsWith("proxy_events_") && f.endsWith(".jsonl"));
+    for (const f of allFiles) {
+      const pidStr = f.replace("proxy_events_", "").replace(".jsonl", "");
+      const filePid = parseInt(pidStr, 10);
+      if (isNaN(filePid) || filePid === (pid || 0)) continue;
+      // Check if the process is still alive (signal 0: just check existence)
+      try {
+        process.kill(filePid, 0);
+        // process exists, skip
+      } catch {
+        // process does not exist, safe to delete
+        try { fs.unlinkSync(path.join(PROXY_EVENTS_DIR, f)); } catch {}
+      }
+    }
+  } catch {}
+
   const bufferedStart = startTime - 5.0;
   const bufferedStop = stopTime + 5.0;
   const events = [];
@@ -568,18 +587,12 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
 
   const tracer = trace.getTracer("opentelemetry-instrumentation-claude");
 
-  // Wait briefly to allow any in-flight intercept.js stream consumers to finish
-  // writing their events to the proxy file before we read and delete it.
-  // consumeStreamAndLog is called without await, so it may still be running
-  // concurrently when the Stop hook fires.
-  await new Promise(resolve => setTimeout(resolve, 800));
-
   // Merge proxy events from intercept.js.
   // resolveClaudePid() walks the process tree to find the claude PID whose
   // proxy_events_<pid>.jsonl file we should read and delete.
   try {
     const claudePid = resolveClaudePid();
-    const proxyEvents = readProxyEvents(startTime, stopTime, true, claudePid);
+    const proxyEvents = readProxyEvents(startTime, stopTime, false, claudePid);
     if (proxyEvents.length > 0) {
       const getSortKey = (e) => {
         if (e.type === "llm_call" && e.request_start_time) return e.request_start_time;
