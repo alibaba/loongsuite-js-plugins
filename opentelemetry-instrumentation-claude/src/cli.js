@@ -266,6 +266,7 @@ function tsNs(sec) {
 function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   const openTools = {};
   let toolFallbackIdx = 0;
+  const fallbackToolQueue = []; // FIFO queue of __tool_N keys for empty tool_use_id matching
   let currentTurnSpan = null;
   let currentTurnCtx = null;
   let turnIdx = 0;
@@ -329,15 +330,20 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
       );
       const toolKey = toolUseId || `__tool_${toolFallbackIdx++}`;
       openTools[toolKey] = toolSpan;
+      if (!toolUseId) fallbackToolQueue.push(toolKey);
 
     } else if (evType === "post_tool_use") {
       const toolUseId = ev.tool_use_id || "";
       const toolName = ev.tool_name || "unknown";
       const toolResponse = ev.tool_response;
 
-      const toolSpan = openTools[toolUseId];
+      let matchKey = (toolUseId && openTools[toolUseId]) ? toolUseId : null;
+      if (!matchKey && !toolUseId && fallbackToolQueue.length > 0) {
+        matchKey = fallbackToolQueue.shift();
+      }
+      const toolSpan = matchKey ? openTools[matchKey] : null;
       if (toolSpan) {
-        delete openTools[toolUseId];
+        delete openTools[matchKey];
         const eventData = { "gen_ai.tool.name": toolName };
         addResponseToEventData(eventData, toolResponse);
         for (const [k, v] of Object.entries(eventData)) {
