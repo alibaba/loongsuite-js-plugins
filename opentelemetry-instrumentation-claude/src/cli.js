@@ -383,7 +383,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     } else if (evType === "subagent_start") {
       const subSid = ev.subagent_session_id || "";
       const span = tracer.startSpan(
-        subSid ? `🤖 Subagent started: ${subSid.slice(0, 30)}` : "🤖 Subagent started",
+        "🤖 Subagent",
         {
           startTime: hrTime(evTs),
           attributes: {
@@ -429,7 +429,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         containerSpan.end(hrTime(childStop));
       } else {
         const span = tracer.startSpan(
-          "🤖 Subagent completed",
+          "🤖 Subagent",
           {
             startTime: hrTime(evTs),
             attributes: {
