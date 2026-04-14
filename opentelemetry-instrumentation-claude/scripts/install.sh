@@ -136,7 +136,7 @@ echo ""
 msg "   # 任意 OTEL 兼容后端（Sunfire、Jaeger 等）：" \
     "   # Any OTEL-compatible backend (Sunfire, Jaeger, etc.):"
 echo "   export OTEL_EXPORTER_OTLP_ENDPOINT='https://your-otlp-endpoint:4318'"
-echo "   export OTEL_RESOURCE_ATTRIBUTES='service.name=my-claude-agent'"
+echo "   export OTEL_SERVICE_NAME='my-claude-agent'"
 echo ""
 msg "   export OTEL_METRICS_EXPORTER=otlp" \
     "   export OTEL_METRICS_EXPORTER=otlp"
