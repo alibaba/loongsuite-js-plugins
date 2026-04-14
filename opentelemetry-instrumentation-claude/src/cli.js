@@ -265,6 +265,7 @@ function tsNs(sec) {
 
 function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   const openTools = {};
+  let toolFallbackIdx = 0;
   let currentTurnSpan = null;
   let currentTurnCtx = null;
   let turnIdx = 0;
@@ -326,11 +327,8 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         { startTime: hrTime(evTs), attributes: attrs },
         parentContext()
       );
-      if (toolUseId) {
-        openTools[toolUseId] = toolSpan;
-      } else {
-        toolSpan.end(hrTime(evTs));
-      }
+      const toolKey = toolUseId || `__tool_${toolFallbackIdx++}`;
+      openTools[toolKey] = toolSpan;
 
     } else if (evType === "post_tool_use") {
       const toolUseId = ev.tool_use_id || "";
