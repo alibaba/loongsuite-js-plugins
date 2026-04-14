@@ -427,25 +427,6 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         const containerCtx = trace.setSpan(context.active(), containerSpan);
         replayEventsAsSpans(tracer, childState.events, containerCtx, childStop);
         containerSpan.end(hrTime(childStop));
-      } else {
-        const span = tracer.startSpan(
-          "🤖 Subagent",
-          {
-            startTime: hrTime(evTs),
-            attributes: {
-              "subagent.session_id": childSid,
-              "subagent.stop_reason": ev.stop_reason || "end_turn",
-              "gen_ai.usage.input_tokens": ev.input_tokens || 0,
-              "gen_ai.usage.output_tokens": ev.output_tokens || 0,
-              "gen_ai.usage.cache_read.input_tokens": ev.cache_read_input_tokens || 0,
-              "gen_ai.usage.cache_creation.input_tokens": ev.cache_creation_input_tokens || 0,
-              "claude_code.hook.type": evType,
-              [SPAN_KIND_ATTR]: "AGENT",
-            },
-          },
-          parentContext()
-        );
-        span.end(hrTime(evTs));
       }
 
     } else if (evType === "llm_call") {
