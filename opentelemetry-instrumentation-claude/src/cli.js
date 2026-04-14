@@ -295,6 +295,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           attributes: {
             "turn.index": turnIdx,
             "gen_ai.input.messages": p,
+            "claude_code.hook.type": evType,
             [SPAN_KIND_ATTR]: "STEP",
           },
         },
@@ -311,6 +312,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
 
       const attrs = {
         "gen_ai.tool.name": toolName,
+        "claude_code.hook.type": evType,
         [SPAN_KIND_ATTR]: "TOOL",
       };
       for (const [k, v] of Object.entries(eventData)) {
@@ -356,6 +358,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           attributes: {
             "compact.trigger": ev.trigger || "unknown",
             "compact.has_custom_instructions": !!ev.has_custom_instructions,
+            "claude_code.hook.type": evType,
             [SPAN_KIND_ATTR]: "TASK",
           },
         },
@@ -373,6 +376,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             "notification.message": msg,
             "notification.level": ev.level || "info",
             "notification.title": ev.title || "",
+            "claude_code.hook.type": evType,
             [SPAN_KIND_ATTR]: "TASK",
           },
         },
@@ -419,6 +423,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
               "gen_ai.usage.input_tokens": childMetrics.input_tokens || ev.input_tokens || 0,
               "gen_ai.usage.output_tokens": childMetrics.output_tokens || ev.output_tokens || 0,
               "gen_ai.request.model": childState.model || "unknown",
+              "claude_code.hook.type": evType,
               [SPAN_KIND_ATTR]: "AGENT",
             },
           },
