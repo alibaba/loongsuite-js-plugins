@@ -436,12 +436,10 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         const childStart = childState.start_time || evTs;
         const childStop = childState.stop_time || evTs;
 
+        const agentName = ev.agent_type || ev.subagent_type || "";
+        const agentTag = agentName ? ` [${agentName}]` : "";
         const containerSpan = tracer.startSpan(
-          (() => {
-            const agentType = ev.agent_type || "";
-            const agentTypeTag = agentType ? ` [${agentType}]` : "";
-            return childPreview ? `🤖 Subagent${agentTypeTag}: ${childPreview}` : `🤖 Subagent${agentTypeTag}`;
-          })(),
+          childPreview ? `🤖 Subagent${agentTag}: ${childPreview}` : `🤖 Subagent${agentTag}`,
           {
             startTime: hrTime(childStart),
             attributes: {
@@ -450,6 +448,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
               "gen_ai.usage.input_tokens": childMetrics.input_tokens || ev.input_tokens || 0,
               "gen_ai.usage.output_tokens": childMetrics.output_tokens || ev.output_tokens || 0,
               "gen_ai.request.model": childState.model || "unknown",
+              "gen_ai.agent.name": agentName,
               "claude_code.hook.type": evType,
               [SPAN_KIND_ATTR]: "AGENT",
             },
@@ -804,7 +803,7 @@ function cmdSubagentStart() {
     timestamp: Date.now() / 1000,
     subagent_session_id: event.subagent_session_id || "",
     agent_id: event.agent_id || "",
-    agent_type: event.agent_type || "",
+    agent_type: event.agent_type || event.subagent_type || "",
   });
   saveState(sessionId, state);
 }
@@ -835,7 +834,7 @@ function cmdSubagentStop() {
     output_tokens: outputTokens,
     cache_read_input_tokens: cacheRead,
     cache_creation_input_tokens: cacheCreate,
-    agent_type: event.agent_type || "",
+    agent_type: event.agent_type || event.subagent_type || "",
   };
   if (childStateSnapshot && Array.isArray(childStateSnapshot.events) && childStateSnapshot.events.length > 0) {
     evData._child_state = childStateSnapshot;
@@ -1197,7 +1196,7 @@ module.exports = {
       timestamp: Date.now() / 1000,
       subagent_session_id: event.subagent_session_id || "",
       agent_id: event.agent_id || "",
-      agent_type: event.agent_type || "",
+      agent_type: event.agent_type || event.subagent_type || "",
     });
     saveState(sessionId, state);
   },
@@ -1223,7 +1222,7 @@ module.exports = {
       output_tokens: outputTokens,
       cache_read_input_tokens: cacheRead,
       cache_creation_input_tokens: cacheCreate,
-      agent_type: event.agent_type || "",
+      agent_type: event.agent_type || event.subagent_type || "",
     };
     if (childStateSnapshot && Array.isArray(childStateSnapshot.events) && childStateSnapshot.events.length > 0) {
       evData._child_state = childStateSnapshot;
