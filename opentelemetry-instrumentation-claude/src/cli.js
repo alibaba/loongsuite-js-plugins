@@ -294,6 +294,55 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     return currentTurnCtx !== null ? currentTurnCtx : parentCtx;
   }
 
+  // Pre-scan 1: build preToolUseMap for post_tool_use to look up matching pre
+  const preToolUseMap = {};
+  for (const ev of events) {
+    if (ev.type === "pre_tool_use" && ev.tool_use_id) {
+      preToolUseMap[ev.tool_use_id] = ev;
+    }
+  }
+
+  // Pre-scan 2: match agent_id → pre_tool_use Agent event (by subagent_type or FIFO)
+  const agentIdToPreToolUse = {};
+  {
+    const agentPreEvents = events
+      .filter(e => e.type === "pre_tool_use" && e.tool_name === "Agent")
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    const subagentStartEvents = events
+      .filter(e => e.type === "subagent_start")
+      .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+    const usedPreIndices = new Set();
+    for (const start of subagentStartEvents) {
+      const agentId = start.agent_id || "";
+      if (!agentId) continue;
+      const agentType = start.agent_type || "";
+      let matchedIdx = -1;
+      // Try to match by subagent_type in tool_input
+      for (let i = 0; i < agentPreEvents.length; i++) {
+        if (usedPreIndices.has(i)) continue;
+        const pre = agentPreEvents[i];
+        const preSubagentType = (pre.tool_input || {}).subagent_type || "";
+        if (preSubagentType && preSubagentType === agentType) {
+          matchedIdx = i;
+          break;
+        }
+      }
+      // Fallback: first unused pre (FIFO)
+      if (matchedIdx === -1) {
+        for (let i = 0; i < agentPreEvents.length; i++) {
+          if (!usedPreIndices.has(i)) { matchedIdx = i; break; }
+        }
+      }
+      if (matchedIdx !== -1) {
+        usedPreIndices.add(matchedIdx);
+        agentIdToPreToolUse[agentId] = agentPreEvents[matchedIdx];
+      }
+    }
+  }
+
+  // Map agent_id → span ctx (populated during post_tool_use processing)
+  const openToolSpanCtxByAgentId = {};
+
   for (const ev of events) {
     const evType = ev.type || "";
     const evTs = ev.timestamp || stopTime;
@@ -370,6 +419,11 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             toolSpan.setAttribute(k, v);
           }
         }
+        // Record span ctx for Agent tools so subagent_start can use it as parent
+        const postAgentId = toolResponse && (toolResponse.agentId || toolResponse.agent_id);
+        if (postAgentId) {
+          openToolSpanCtxByAgentId[postAgentId] = trace.setSpan(context.active(), toolSpan);
+        }
         toolSpan.end(hrTime(evTs));
       }
 
@@ -411,6 +465,10 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
       const subSid = ev.subagent_session_id || "";
       const agentName = ev.agent_type || "";
       const agentTag = agentName ? ` [${agentName}]` : "";
+      // Try to find the Agent tool span ctx that spawned this subagent
+      const agentId = ev.agent_id || "";
+      const matchedAgentCtx = agentId ? openToolSpanCtxByAgentId[agentId] : null;
+      const subagentParentCtx = matchedAgentCtx || currentTurnCtx || parentCtx;
       const span = tracer.startSpan(
         `🤖 Subagent${agentTag}`,
         {
@@ -422,7 +480,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             [SPAN_KIND_ATTR]: "AGENT",
           },
         },
-        parentContext()
+        subagentParentCtx
       );
       span.end(hrTime(evTs));
 
