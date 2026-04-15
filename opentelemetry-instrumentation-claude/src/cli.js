@@ -289,9 +289,14 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   let currentTurnSpan = null;
   let currentTurnCtx = null;
   let turnIdx = 0;
+  const subagentSpanStack = []; // stack of { span, ctx } for open subagent spans
 
   function parentContext() {
-    return currentTurnCtx !== null ? currentTurnCtx : parentCtx;
+    if (subagentSpanStack.length > 0) {
+      return subagentSpanStack[subagentSpanStack.length - 1].ctx;
+    }
+    if (currentTurnCtx) return currentTurnCtx;
+    return parentCtx;
   }
 
   for (const ev of events) {
@@ -424,21 +429,36 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         },
         parentContext()
       );
-      span.end(hrTime(evTs));
+      const subCtx = trace.setSpan(context.active(), span);
+      subagentSpanStack.push({ span, ctx: subCtx });
+      // Do NOT end span here — closed in subagent_stop
 
     } else if (evType === "subagent_stop") {
       const childSid = ev.subagent_session_id || "unknown";
       const childState = ev._child_state;
 
-      if (childState && Array.isArray(childState.events) && childState.events.length > 0) {
+      if (subagentSpanStack.length > 0) {
+        // Close the matching subagent_start span
+        const { span } = subagentSpanStack.pop();
+        span.setAttributes({
+          "subagent.stop_reason": ev.stop_reason || "end_turn",
+          "gen_ai.usage.input_tokens": ev.input_tokens || 0,
+          "gen_ai.usage.output_tokens": ev.output_tokens || 0,
+          "gen_ai.usage.cache_read.input_tokens": ev.cache_read_input_tokens || 0,
+          "gen_ai.usage.cache_creation.input_tokens": ev.cache_creation_input_tokens || 0,
+        });
+        if (childState && Array.isArray(childState.events) && childState.events.length > 0) {
+          const spanCtx = trace.setSpan(context.active(), span);
+          replayEventsAsSpans(tracer, childState.events, spanCtx, childState.stop_time || evTs);
+        }
+        span.end(hrTime(evTs));
+      } else if (childState && Array.isArray(childState.events) && childState.events.length > 0) {
+        // Fallback: no matching subagent_start — create a container span from child_state
         const childPrompt = childState.prompt || "";
-        const childPreview = childPrompt.length > 50
-          ? childPrompt.slice(0, 50) + "..."
-          : childPrompt;
+        const childPreview = childPrompt.length > 50 ? childPrompt.slice(0, 50) + "..." : childPrompt;
         const childMetrics = childState.metrics || {};
         const childStart = childState.start_time || evTs;
         const childStop = childState.stop_time || evTs;
-
         const containerSpan = tracer.startSpan(
           childPreview ? `🤖 Subagent: ${childPreview}` : "🤖 Subagent",
           {
@@ -562,6 +582,10 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   }
   if (currentTurnSpan !== null) {
     currentTurnSpan.end(hrTime(stopTime));
+  }
+  // Close any unclosed subagent spans (start/stop mismatch safety)
+  for (const { span } of subagentSpanStack.splice(0)) {
+    span.end(hrTime(stopTime));
   }
 }
 
