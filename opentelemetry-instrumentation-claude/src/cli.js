@@ -283,9 +283,9 @@ function tsNs(sec) {
 // ---------------------------------------------------------------------------
 
 function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
-  const openTools = {};
-  let toolFallbackIdx = 0;
-  const fallbackToolQueue = []; // FIFO queue of __tool_N keys for empty tool_use_id matching
+  const subagentSpanStack = []; // { span, agentId } — open subagent spans waiting to be closed
+  const openAgentPreSpans = []; // { span, ctx, toolUseId } — Agent pre spans kept open for subagents
+  const openSubagentsByAgentId = {}; // agentId → { span, stopTs } — waiting for post_tool_use to close
   let currentTurnSpan = null;
   let currentTurnCtx = null;
   let turnIdx = 0;
@@ -302,18 +302,6 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     }
   }
 
-  // Build agentIdToPreToolUse via post_tool_use.tool_response.agentId chain
-  // (pre_tool_use.tool_use_id → post_tool_use.tool_use_id → post.tool_response.agentId)
-  const agentIdToPreToolUse = {};
-  for (const ev of events) {
-    if (ev.type === "post_tool_use" && ev.tool_name === "Agent") {
-      const agentId = (ev.tool_response || {}).agentId || (ev.tool_response || {}).agent_id;
-      const toolUseId = ev.tool_use_id;
-      if (agentId && toolUseId && preToolUseMap[toolUseId]) {
-        agentIdToPreToolUse[agentId] = preToolUseMap[toolUseId];
-      }
-    }
-  }
 
   for (const ev of events) {
     const evType = ev.type || "";
@@ -349,53 +337,93 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
       const toolName = ev.tool_name || "unknown";
       const toolInput = ev.tool_input || {};
       const toolUseId = ev.tool_use_id || "";
-      const toolTitle = createToolTitle(toolName, toolInput);
-      const eventData = createEventData(toolName, toolInput);
 
-      const attrs = {
-        "gen_ai.tool.name": toolName,
-        "claude_code.hook.type": evType,
-        [SPAN_KIND_ATTR]: "TOOL",
-      };
-      for (const [k, v] of Object.entries(eventData)) {
-        if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-          attrs[k] = v;
+      if (toolName === "Agent" || toolName === "agent") {
+        // Agent tool: create span immediately, keep open so subagents nest under it
+        const toolTitle = createToolTitle(toolName, toolInput);
+        const eventData = createEventData(toolName, toolInput);
+        const attrs = {
+          "gen_ai.tool.name": toolName,
+          "claude_code.hook.type": evType,
+          [SPAN_KIND_ATTR]: "TOOL",
+        };
+        for (const [k, v] of Object.entries(eventData)) {
+          if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+            attrs[k] = v;
+          }
         }
+        const span = tracer.startSpan(
+          `🔧 ${toolTitle}`,
+          { startTime: hrTime(evTs), attributes: attrs },
+          parentContext()
+        );
+        const spanCtx = trace.setSpan(context.active(), span);
+        openAgentPreSpans.push({ span, ctx: spanCtx, toolUseId });
+        // Do NOT end span — closed in post_tool_use
       }
-
-      const toolSpan = tracer.startSpan(
-        `🔧 ${toolTitle}`,
-        { startTime: hrTime(evTs), attributes: attrs },
-        parentContext()
-      );
-      const toolKey = toolUseId || `__tool_${toolFallbackIdx++}`;
-      openTools[toolKey] = toolSpan;
-      if (!toolUseId) fallbackToolQueue.push(toolKey);
+      // Non-Agent tools: span created at post_tool_use time
 
     } else if (evType === "post_tool_use") {
       const toolUseId = ev.tool_use_id || "";
       const toolName = ev.tool_name || "unknown";
       const toolResponse = ev.tool_response;
+      const postAgentId = (toolResponse && (toolResponse.agentId || toolResponse.agent_id)) || "";
 
-      let matchKey = (toolUseId && openTools[toolUseId]) ? toolUseId : null;
-      if (!matchKey && !toolUseId && fallbackToolQueue.length > 0) {
-        matchKey = fallbackToolQueue.shift();
-      }
-      const toolSpan = matchKey ? openTools[matchKey] : null;
-      if (toolSpan) {
-        delete openTools[matchKey];
-        const eventData = { "gen_ai.tool.name": toolName };
+      if (toolName === "Agent" || toolName === "agent") {
+        // 1. Close matching Agent pre span by tool_use_id
+        const preIdx = openAgentPreSpans.findIndex(e => e.toolUseId === toolUseId);
+        if (preIdx !== -1) {
+          const { span } = openAgentPreSpans.splice(preIdx, 1)[0];
+          const eventData = { "gen_ai.tool.name": toolName };
+          addResponseToEventData(eventData, toolResponse);
+          for (const [k, v] of Object.entries(eventData)) {
+            if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+              span.setAttribute(k, v);
+            }
+          }
+          if (postAgentId) span.setAttribute("agent.agent_id", postAgentId);
+          span.end(hrTime(evTs));
+        }
+        // 2. Close matching subagent span by agentId
+        if (postAgentId && openSubagentsByAgentId[postAgentId]) {
+          const { span, stopTs } = openSubagentsByAgentId[postAgentId];
+          const resultData = {};
+          addResponseToEventData(resultData, toolResponse);
+          for (const [k, v] of Object.entries(resultData)) {
+            if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+              span.setAttribute(k, v);
+            }
+          }
+          span.end(hrTime(stopTs || evTs));
+          delete openSubagentsByAgentId[postAgentId];
+          // Remove from stack too
+          const idx = subagentSpanStack.findIndex(e => e.agentId === postAgentId);
+          if (idx !== -1) subagentSpanStack.splice(idx, 1);
+        }
+      } else {
+        // Regular (non-Agent) tool: create combined span from pre+post
+        const preEv = preToolUseMap[toolUseId] || {};
+        const effectiveName = preEv.tool_name || toolName;
+        const effectiveInput = preEv.tool_input || {};
+        const startTs = preEv.timestamp || evTs;
+        const toolTitle = createToolTitle(effectiveName, effectiveInput);
+        const eventData = createEventData(effectiveName, effectiveInput);
         addResponseToEventData(eventData, toolResponse);
+        const attrs = {
+          "gen_ai.tool.name": effectiveName,
+          "claude_code.hook.type": "tool_use",
+          [SPAN_KIND_ATTR]: "TOOL",
+        };
         for (const [k, v] of Object.entries(eventData)) {
           if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-            toolSpan.setAttribute(k, v);
+            attrs[k] = v;
           }
         }
-        // Cross-reference: add agent_id to Agent tool span
-        const postAgentId = (toolResponse && (toolResponse.agentId || toolResponse.agent_id)) || "";
-        if ((toolName === "Agent" || toolName === "agent") && postAgentId) {
-          toolSpan.setAttribute("agent.agent_id", postAgentId);
-        }
+        const toolSpan = tracer.startSpan(
+          `🔧 ${toolTitle}`,
+          { startTime: hrTime(startTs), attributes: attrs },
+          parentContext()
+        );
         toolSpan.end(hrTime(evTs));
       }
 
@@ -435,35 +463,54 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
 
     } else if (evType === "subagent_start") {
       const subSid = ev.subagent_session_id || "";
+      const agentId = ev.agent_id || "";
       const agentName = ev.agent_type || "";
       const agentTag = agentName ? ` [${agentName}]` : "";
-      const agentId = ev.agent_id || "";
-      const matchedPre = agentId ? agentIdToPreToolUse[agentId] : null;
-      const subagentAttrs = {
-        "subagent.session_id": subSid,
-        "gen_ai.agent.name": agentName,
-        "claude_code.hook.type": evType,
-        [SPAN_KIND_ATTR]: "AGENT",
-      };
-      if (matchedPre) {
-        subagentAttrs["agent.tool_use_id"] = matchedPre.tool_use_id || "";
-        subagentAttrs["agent.tool_description"] = (matchedPre.tool_input || {}).description || "";
-      }
+      // Nest under the most recent open Agent pre span (if any)
+      const agentPreEntry = openAgentPreSpans.length > 0
+        ? openAgentPreSpans[openAgentPreSpans.length - 1]
+        : null;
+      const subagentParentCtx = agentPreEntry ? agentPreEntry.ctx : (currentTurnCtx || parentCtx);
       const span = tracer.startSpan(
         `🤖 Subagent${agentTag}`,
         {
           startTime: hrTime(evTs),
-          attributes: subagentAttrs,
+          attributes: {
+            "subagent.session_id": subSid,
+            "gen_ai.agent.name": agentName,
+            "claude_code.hook.type": evType,
+            [SPAN_KIND_ATTR]: "AGENT",
+          },
         },
-        currentTurnCtx || parentCtx
+        subagentParentCtx
       );
-      span.end(hrTime(evTs));
+      if (agentId) openSubagentsByAgentId[agentId] = { span, stopTs: undefined };
+      subagentSpanStack.push({ span, agentId });
+      // Do NOT end span — closed in post_tool_use (via agentId) or end-of-function
 
     } else if (evType === "subagent_stop") {
       const childSid = ev.subagent_session_id || "unknown";
       const childState = ev._child_state;
 
-      if (childState && Array.isArray(childState.events) && childState.events.length > 0) {
+      if (subagentSpanStack.length > 0) {
+        const { span, agentId } = subagentSpanStack.shift(); // FIFO
+        span.setAttributes({
+          "subagent.stop_reason": ev.stop_reason || "end_turn",
+          "gen_ai.usage.input_tokens": ev.input_tokens || 0,
+          "gen_ai.usage.output_tokens": ev.output_tokens || 0,
+          "gen_ai.usage.cache_read.input_tokens": ev.cache_read_input_tokens || 0,
+          "gen_ai.usage.cache_creation.input_tokens": ev.cache_creation_input_tokens || 0,
+        });
+        if (agentId && openSubagentsByAgentId[agentId]) {
+          openSubagentsByAgentId[agentId].stopTs = evTs;
+        }
+        if (childState && Array.isArray(childState.events) && childState.events.length > 0) {
+          const spanCtx = trace.setSpan(context.active(), span);
+          replayEventsAsSpans(tracer, childState.events, spanCtx, childState.stop_time || evTs);
+        }
+        // Do NOT end span — post_tool_use will close it
+      } else if (childState && Array.isArray(childState.events) && childState.events.length > 0) {
+        // Fallback: no open subagent span, create container span to hold child events
         const childPrompt = childState.prompt || "";
         const childPreview = childPrompt.length > 50
           ? childPrompt.slice(0, 50) + "..."
@@ -492,6 +539,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         replayEventsAsSpans(tracer, childState.events, containerCtx, childStop);
         containerSpan.end(hrTime(childStop));
       }
+      // Extra stops (more stops than starts) are silently ignored
 
     } else if (evType === "llm_call") {
       const model = ev.model || "unknown";
@@ -589,9 +637,13 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     }
   }
 
-  // Close any orphaned tool spans
-  for (const orphan of Object.values(openTools)) {
-    orphan.end(hrTime(stopTime));
+  // Close unclosed subagent spans (no post_tool_use arrived)
+  for (const { span } of Object.values(openSubagentsByAgentId)) {
+    span.end(hrTime(stopTime));
+  }
+  // Close unclosed Agent pre spans
+  for (const { span } of openAgentPreSpans) {
+    span.end(hrTime(stopTime));
   }
   if (currentTurnSpan !== null) {
     currentTurnSpan.end(hrTime(stopTime));
