@@ -437,7 +437,11 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         const childStop = childState.stop_time || evTs;
 
         const containerSpan = tracer.startSpan(
-          childPreview ? `🤖 Subagent: ${childPreview}` : "🤖 Subagent",
+          (() => {
+            const agentType = ev.agent_type || "";
+            const agentTypeTag = agentType ? ` [${agentType}]` : "";
+            return childPreview ? `🤖 Subagent${agentTypeTag}: ${childPreview}` : `🤖 Subagent${agentTypeTag}`;
+          })(),
           {
             startTime: hrTime(childStart),
             attributes: {
@@ -831,6 +835,7 @@ function cmdSubagentStop() {
     output_tokens: outputTokens,
     cache_read_input_tokens: cacheRead,
     cache_creation_input_tokens: cacheCreate,
+    agent_type: event.agent_type || "",
   };
   if (childStateSnapshot && Array.isArray(childStateSnapshot.events) && childStateSnapshot.events.length > 0) {
     evData._child_state = childStateSnapshot;
@@ -1218,6 +1223,7 @@ module.exports = {
       output_tokens: outputTokens,
       cache_read_input_tokens: cacheRead,
       cache_creation_input_tokens: cacheCreate,
+      agent_type: event.agent_type || "",
     };
     if (childStateSnapshot && Array.isArray(childStateSnapshot.events) && childStateSnapshot.events.length > 0) {
       evData._child_state = childStateSnapshot;
