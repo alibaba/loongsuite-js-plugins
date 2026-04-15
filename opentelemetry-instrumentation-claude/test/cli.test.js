@@ -302,10 +302,12 @@ describe("replayEventsAsSpans", () => {
     expect(mockSpan.end).toHaveBeenCalled();
   });
 
-  test("immediately ends tool span when tool_use_id is null", () => {
+  test("pre_tool_use without post creates no span (span deferred to post_tool_use)", () => {
+    // New design: spans are created at post_tool_use time, not pre_tool_use time
     const events = [{ type: "pre_tool_use", timestamp: 1000, tool_name: "Read", tool_input: {}, tool_use_id: null }];
     cli._replayEventsAsSpans(mockTracer, events, mockCtx, 1001);
-    expect(mockSpan.end).toHaveBeenCalled();
+    // No span created — pre_tool_use is now skipped
+    expect(mockTracer.startSpan).not.toHaveBeenCalled();
   });
 
   test("creates notification span", () => {
@@ -553,16 +555,14 @@ describe("replayEventsAsSpans — extended", () => {
     );
   });
 
-  test("orphaned tool spans (no post_tool_use) are closed at stopTime", () => {
+  test("orphaned pre_tool_use (no matching post) creates no span", () => {
+    // New design: spans are only created when post_tool_use arrives;
+    // a pre with no matching post simply produces no span
     const events = [
       { type: "pre_tool_use", timestamp: 1000, tool_name: "Write", tool_input: {}, tool_use_id: "orphan-1" },
     ];
     cli._replayEventsAsSpans(mockTracer, events, mockCtx, 2000);
-    // span.end called with the stop time HrTime
-    expect(mockSpan.end).toHaveBeenCalled();
-    const endArg = mockSpan.end.mock.calls[0][0];
-    expect(Array.isArray(endArg)).toBe(true);
-    expect(endArg[0]).toBe(2000); // seconds component = stopTime
+    expect(mockTracer.startSpan).not.toHaveBeenCalled();
   });
 
   test("notification with empty message uses generic title", () => {

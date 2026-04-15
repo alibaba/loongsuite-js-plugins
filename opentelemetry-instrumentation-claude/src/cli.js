@@ -283,9 +283,14 @@ function tsNs(sec) {
 // ---------------------------------------------------------------------------
 
 function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
-  const openTools = {};
-  let toolFallbackIdx = 0;
-  const fallbackToolQueue = []; // FIFO queue of __tool_N keys for empty tool_use_id matching
+  // Pre-scan: build a map of pre_tool_use events by tool_use_id
+  const preToolUseMap = {};
+  for (const ev of events) {
+    if (ev.type === "pre_tool_use" && ev.tool_use_id) {
+      preToolUseMap[ev.tool_use_id] = ev;
+    }
+  }
+
   let currentTurnSpan = null;
   let currentTurnCtx = null;
   let turnIdx = 0;
@@ -333,15 +338,21 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
       currentTurnCtx = trace.setSpan(context.active(), currentTurnSpan);
 
     } else if (evType === "pre_tool_use") {
-      const toolName = ev.tool_name || "unknown";
-      const toolInput = ev.tool_input || {};
+      // Span is created at post_tool_use time with combined pre+post data; skip here.
+
+    } else if (evType === "post_tool_use") {
       const toolUseId = ev.tool_use_id || "";
+      const preEv = preToolUseMap[toolUseId] || {};
+      const toolName = preEv.tool_name || ev.tool_name || "unknown";
+      const toolInput = preEv.tool_input || {};
+      const startTs = preEv.timestamp || evTs;
       const toolTitle = createToolTitle(toolName, toolInput);
       const eventData = createEventData(toolName, toolInput);
+      addResponseToEventData(eventData, ev.tool_response);
 
       const attrs = {
         "gen_ai.tool.name": toolName,
-        "claude_code.hook.type": evType,
+        "claude_code.hook.type": "tool_use",
         [SPAN_KIND_ATTR]: "TOOL",
       };
       for (const [k, v] of Object.entries(eventData)) {
@@ -352,34 +363,10 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
 
       const toolSpan = tracer.startSpan(
         `🔧 ${toolTitle}`,
-        { startTime: hrTime(evTs), attributes: attrs },
+        { startTime: hrTime(startTs), attributes: attrs },
         parentContext()
       );
-      const toolKey = toolUseId || `__tool_${toolFallbackIdx++}`;
-      openTools[toolKey] = toolSpan;
-      if (!toolUseId) fallbackToolQueue.push(toolKey);
-
-    } else if (evType === "post_tool_use") {
-      const toolUseId = ev.tool_use_id || "";
-      const toolName = ev.tool_name || "unknown";
-      const toolResponse = ev.tool_response;
-
-      let matchKey = (toolUseId && openTools[toolUseId]) ? toolUseId : null;
-      if (!matchKey && !toolUseId && fallbackToolQueue.length > 0) {
-        matchKey = fallbackToolQueue.shift();
-      }
-      const toolSpan = matchKey ? openTools[matchKey] : null;
-      if (toolSpan) {
-        delete openTools[matchKey];
-        const eventData = { "gen_ai.tool.name": toolName };
-        addResponseToEventData(eventData, toolResponse);
-        for (const [k, v] of Object.entries(eventData)) {
-          if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-            toolSpan.setAttribute(k, v);
-          }
-        }
-        toolSpan.end(hrTime(evTs));
-      }
+      toolSpan.end(hrTime(evTs));
 
     } else if (evType === "pre_compact") {
       const span = tracer.startSpan(
@@ -581,10 +568,6 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     }
   }
 
-  // Close any orphaned tool spans
-  for (const orphan of Object.values(openTools)) {
-    orphan.end(hrTime(stopTime));
-  }
   if (currentTurnSpan !== null) {
     currentTurnSpan.end(hrTime(stopTime));
   }
