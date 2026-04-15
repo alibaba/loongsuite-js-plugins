@@ -399,7 +399,11 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           parentContext(evTs)
         );
         const spanCtx = trace.setSpan(context.active(), span);
-        openAgentPreSpans.push({ span, ctx: spanCtx, toolUseId });
+        openAgentPreSpans.push({
+          span, ctx: spanCtx, toolUseId,
+          subagentType: (toolInput.subagent_type || ""),
+          matched: false,
+        });
         // Do NOT end span — closed in post_tool_use
       }
       // Non-Agent tools: span created at post_tool_use time
@@ -455,6 +459,10 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
               replayEventsAsSpans(tracer, subEntry.childState.events, subCtx, subEntry.childState.stop_time || evTs);
             }
             subEntry.span.end(hrTime(subEntry.stopTs || evTs));
+            // Close synthetic pre span if it was created at subagent_start time
+            if (subEntry.syntheticPreSpan) {
+              subEntry.syntheticPreSpan.end(hrTime(evTs));
+            }
             delete openSubagentsByAgentId[postAgentId];
             delete openSubagentCtxByAgentId[postAgentId];
             const idx = subagentSpanStack.findIndex(e => e.agentId === postAgentId);
@@ -525,8 +533,36 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     } else if (evType === "subagent_start") {
       const agentId = ev.agent_id || "";
       const agentName = ev.agent_type || "";
-      // Create span now so parentContext(evTs) can use it for events in its window
       const agentTag = agentName ? ` [${agentName}]` : "";
+
+      // Find matching real Agent pre span (by subagentType or first unmatched)
+      let agentPreCtx = currentTurnCtx || parentCtx;
+      let syntheticPreSpan = null;
+      const matchedPreIdx = openAgentPreSpans.findIndex(e =>
+        !e.matched && (!e.subagentType || e.subagentType === agentName)
+      );
+      if (matchedPreIdx !== -1) {
+        openAgentPreSpans[matchedPreIdx].matched = true;
+        agentPreCtx = openAgentPreSpans[matchedPreIdx].ctx;
+      } else {
+        // No real pre span — create synthetic Agent pre span under Turn
+        syntheticPreSpan = tracer.startSpan(
+          `🔧 Agent - ${agentName || "subagent"}`,
+          {
+            startTime: hrTime(evTs),
+            attributes: {
+              "gen_ai.tool.name": "Agent",
+              "gen_ai.agent.name": agentName,
+              "claude_code.hook.type": "pre_tool_use",
+              [SPAN_KIND_ATTR]: "TOOL",
+            },
+          },
+          currentTurnCtx || parentCtx
+        );
+        agentPreCtx = trace.setSpan(context.active(), syntheticPreSpan);
+      }
+
+      // Create subagent span under agentPreCtx (real or synthetic)
       const subSpanForCtx = tracer.startSpan(
         `🤖 Subagent${agentTag}`,
         {
@@ -538,7 +574,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             [SPAN_KIND_ATTR]: "AGENT",
           },
         },
-        currentTurnCtx || parentCtx // subagents nest under Turn, not other subagents
+        agentPreCtx
       );
       const subCtxForWindow = trace.setSpan(context.active(), subSpanForCtx);
       openSubagentCtxByAgentId[agentId] = { span: subSpanForCtx, ctx: subCtxForWindow };
@@ -550,7 +586,8 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           stopTs: undefined,
           stopAttrs: {},
           childState: null,
-          span: subSpanForCtx, // reference to span for later closing
+          span: subSpanForCtx,
+          syntheticPreSpan, // may be null if real pre was found
         };
       }
       subagentSpanStack.push({ agentId, startTs: evTs });
@@ -727,6 +764,10 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
       replayEventsAsSpans(tracer, subEntry.childState.events, subCtx, subEntry.childState.stop_time || stopTime);
     }
     span.end(hrTime(subEntry.stopTs || stopTime));
+    // Close synthetic pre span if it was created at subagent_start time
+    if (subEntry.syntheticPreSpan) {
+      subEntry.syntheticPreSpan.end(hrTime(subEntry.stopTs || stopTime));
+    }
   }
   // Close unclosed Agent pre spans (no matching post arrived)
   for (const { span } of openAgentPreSpans) {
