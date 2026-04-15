@@ -297,12 +297,8 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   const subagentSpanStack = []; // stack of { span, ctx } for open subagent spans
 
   function parentContext() {
-    // Only use subagent context when exactly one subagent is active (sequential).
-    // With concurrent subagents (length > 1) we can't attribute spans correctly,
-    // so fall back to the turn context.
-    if (subagentSpanStack.length === 1) {
-      return subagentSpanStack[0].ctx;
-    }
+    // Parent session's tool/LLM events belong to the parent agent, not to any subagent.
+    // Subagent internals live in separate session files and are replayed via child_state.
     if (currentTurnCtx) return currentTurnCtx;
     return parentCtx;
   }
@@ -570,10 +566,6 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
 
   if (currentTurnSpan !== null) {
     currentTurnSpan.end(hrTime(stopTime));
-  }
-  // Close any unclosed subagent spans (start/stop mismatch safety)
-  for (const { span } of subagentSpanStack.splice(0)) {
-    span.end(hrTime(stopTime));
   }
 }
 
