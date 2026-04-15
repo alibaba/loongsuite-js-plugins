@@ -409,12 +409,15 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
 
     } else if (evType === "subagent_start") {
       const subSid = ev.subagent_session_id || "";
+      const agentName = ev.agent_type || "";
+      const agentTag = agentName ? ` [${agentName}]` : "";
       const span = tracer.startSpan(
-        "🤖 Subagent",
+        `🤖 Subagent${agentTag}`,
         {
           startTime: hrTime(evTs),
           attributes: {
             "subagent.session_id": subSid,
+            "gen_ai.agent.name": agentName,
             "claude_code.hook.type": evType,
             [SPAN_KIND_ATTR]: "AGENT",
           },
