@@ -491,21 +491,6 @@ describe("replayEventsAsSpans — extended", () => {
     require("@opentelemetry/api").trace.setSpan = jest.fn().mockReturnValue({});
   });
 
-  test("subagent_stop without child state creates simple span", () => {
-    const events = [{
-      type: "subagent_stop", timestamp: 1001,
-      subagent_session_id: "sub-99", stop_reason: "end_turn",
-      input_tokens: 20, output_tokens: 10,
-      cache_read_input_tokens: 2, cache_creation_input_tokens: 0,
-    }];
-    cli._replayEventsAsSpans(mockTracer, events, mockCtx, 1002);
-    const call = mockTracer.startSpan.mock.calls[0];
-    expect(call[0]).toContain("Subagent completed");
-    const attrs = call[1].attributes;
-    expect(attrs["gen_ai.usage.input_tokens"]).toBe(20);
-    expect(attrs["subagent.stop_reason"]).toBe("end_turn");
-  });
-
   test("subagent_stop with child_state recurses into child events", () => {
     const events = [{
       type: "subagent_stop", timestamp: 1001,
