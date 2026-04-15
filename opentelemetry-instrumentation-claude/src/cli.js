@@ -292,8 +292,11 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   const subagentSpanStack = []; // stack of { span, ctx } for open subagent spans
 
   function parentContext() {
-    if (subagentSpanStack.length > 0) {
-      return subagentSpanStack[subagentSpanStack.length - 1].ctx;
+    // Only use subagent context when exactly one subagent is active (sequential).
+    // With concurrent subagents (length > 1) we can't attribute spans correctly,
+    // so fall back to the turn context.
+    if (subagentSpanStack.length === 1) {
+      return subagentSpanStack[0].ctx;
     }
     if (currentTurnCtx) return currentTurnCtx;
     return parentCtx;
