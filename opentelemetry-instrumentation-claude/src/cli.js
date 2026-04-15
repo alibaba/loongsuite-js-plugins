@@ -196,6 +196,25 @@ function resolveClaudePid() {
 function readProxyEvents(startTime, stopTime, deleteAfterRead = false, pid = null) {
   if (!fs.existsSync(PROXY_EVENTS_DIR)) return [];
 
+  // Cleanup stale proxy files from dead processes
+  try {
+    const allFiles = fs.readdirSync(PROXY_EVENTS_DIR)
+      .filter(f => f.startsWith("proxy_events_") && f.endsWith(".jsonl"));
+    for (const f of allFiles) {
+      const pidStr = f.replace("proxy_events_", "").replace(".jsonl", "");
+      const filePid = parseInt(pidStr, 10);
+      if (isNaN(filePid) || filePid === (pid || 0)) continue;
+      // Check if the process is still alive (signal 0: just check existence)
+      try {
+        process.kill(filePid, 0);
+        // process exists, skip
+      } catch {
+        // process does not exist, safe to delete
+        try { fs.unlinkSync(path.join(PROXY_EVENTS_DIR, f)); } catch {}
+      }
+    }
+  } catch {}
+
   const bufferedStart = startTime - 5.0;
   const bufferedStop = stopTime + 5.0;
   const events = [];
@@ -265,6 +284,8 @@ function tsNs(sec) {
 
 function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   const openTools = {};
+  let toolFallbackIdx = 0;
+  const fallbackToolQueue = []; // FIFO queue of __tool_N keys for empty tool_use_id matching
   let currentTurnSpan = null;
   let currentTurnCtx = null;
   let turnIdx = 0;
@@ -295,6 +316,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           attributes: {
             "turn.index": turnIdx,
             "gen_ai.input.messages": p,
+            "claude_code.hook.type": evType,
             [SPAN_KIND_ATTR]: "STEP",
           },
         },
@@ -311,6 +333,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
 
       const attrs = {
         "gen_ai.tool.name": toolName,
+        "claude_code.hook.type": evType,
         [SPAN_KIND_ATTR]: "TOOL",
       };
       for (const [k, v] of Object.entries(eventData)) {
@@ -324,20 +347,22 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         { startTime: hrTime(evTs), attributes: attrs },
         parentContext()
       );
-      if (toolUseId) {
-        openTools[toolUseId] = toolSpan;
-      } else {
-        toolSpan.end(hrTime(evTs));
-      }
+      const toolKey = toolUseId || `__tool_${toolFallbackIdx++}`;
+      openTools[toolKey] = toolSpan;
+      if (!toolUseId) fallbackToolQueue.push(toolKey);
 
     } else if (evType === "post_tool_use") {
       const toolUseId = ev.tool_use_id || "";
       const toolName = ev.tool_name || "unknown";
       const toolResponse = ev.tool_response;
 
-      const toolSpan = openTools[toolUseId];
+      let matchKey = (toolUseId && openTools[toolUseId]) ? toolUseId : null;
+      if (!matchKey && !toolUseId && fallbackToolQueue.length > 0) {
+        matchKey = fallbackToolQueue.shift();
+      }
+      const toolSpan = matchKey ? openTools[matchKey] : null;
       if (toolSpan) {
-        delete openTools[toolUseId];
+        delete openTools[matchKey];
         const eventData = { "gen_ai.tool.name": toolName };
         addResponseToEventData(eventData, toolResponse);
         for (const [k, v] of Object.entries(eventData)) {
@@ -356,6 +381,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           attributes: {
             "compact.trigger": ev.trigger || "unknown",
             "compact.has_custom_instructions": !!ev.has_custom_instructions,
+            "claude_code.hook.type": evType,
             [SPAN_KIND_ATTR]: "TASK",
           },
         },
@@ -373,6 +399,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             "notification.message": msg,
             "notification.level": ev.level || "info",
             "notification.title": ev.title || "",
+            "claude_code.hook.type": evType,
             [SPAN_KIND_ATTR]: "TASK",
           },
         },
@@ -383,7 +410,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     } else if (evType === "subagent_start") {
       const subSid = ev.subagent_session_id || "";
       const span = tracer.startSpan(
-        subSid ? `🤖 Subagent started: ${subSid.slice(0, 30)}` : "🤖 Subagent started",
+        "🤖 Subagent",
         {
           startTime: hrTime(evTs),
           attributes: {
@@ -419,6 +446,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
               "gen_ai.usage.input_tokens": childMetrics.input_tokens || ev.input_tokens || 0,
               "gen_ai.usage.output_tokens": childMetrics.output_tokens || ev.output_tokens || 0,
               "gen_ai.request.model": childState.model || "unknown",
+              "claude_code.hook.type": evType,
               [SPAN_KIND_ATTR]: "AGENT",
             },
           },
@@ -427,25 +455,6 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         const containerCtx = trace.setSpan(context.active(), containerSpan);
         replayEventsAsSpans(tracer, childState.events, containerCtx, childStop);
         containerSpan.end(hrTime(childStop));
-      } else {
-        const span = tracer.startSpan(
-          "🤖 Subagent completed",
-          {
-            startTime: hrTime(evTs),
-            attributes: {
-              "subagent.session_id": childSid,
-              "subagent.stop_reason": ev.stop_reason || "end_turn",
-              "gen_ai.usage.input_tokens": ev.input_tokens || 0,
-              "gen_ai.usage.output_tokens": ev.output_tokens || 0,
-              "gen_ai.usage.cache_read.input_tokens": ev.cache_read_input_tokens || 0,
-              "gen_ai.usage.cache_creation.input_tokens": ev.cache_creation_input_tokens || 0,
-              "claude_code.hook.type": evType,
-              [SPAN_KIND_ATTR]: "AGENT",
-            },
-          },
-          parentContext()
-        );
-        span.end(hrTime(evTs));
       }
 
     } else if (evType === "llm_call") {
@@ -583,11 +592,13 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
   // proxy_events_<pid>.jsonl file we should read and delete.
   try {
     const claudePid = resolveClaudePid();
-    const proxyEvents = readProxyEvents(startTime, stopTime, true, claudePid);
+    const proxyEvents = readProxyEvents(startTime, stopTime, false, claudePid);
     if (proxyEvents.length > 0) {
-      events = [...events, ...proxyEvents].sort(
-        (a, b) => (a.timestamp || 0) - (b.timestamp || 0)
-      );
+      const getSortKey = (e) => {
+        if (e.type === "llm_call" && e.request_start_time) return e.request_start_time;
+        return e.timestamp || 0;
+      };
+      events = [...events, ...proxyEvents].sort((a, b) => getSortKey(a) - getSortKey(b));
     }
   } catch {}
 
