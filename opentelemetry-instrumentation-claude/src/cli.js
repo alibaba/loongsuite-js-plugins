@@ -297,13 +297,17 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
       for (const [agentId, win] of Object.entries(subagentWindowMap)) {
         if (eventTs >= win.startTs && eventTs <= win.stopTs) {
           const entry = openSubagentCtxByAgentId[agentId];
-          if (entry) active.push({ startTs: win.startTs, ctx: entry.ctx });
+          if (entry) active.push({ startTs: win.startTs, stopTs: win.stopTs, ctx: entry.ctx });
         }
       }
       if (active.length === 1) return active[0].ctx;
       if (active.length > 1) {
-        // Pick the one whose startTs is closest to eventTs
-        active.sort((a, b) => Math.abs(a.startTs - eventTs) - Math.abs(b.startTs - eventTs));
+        // Concurrent subagents: pick the one whose window center is closest to eventTs
+        active.sort((a, b) => {
+          const centerA = (a.startTs + a.stopTs) / 2;
+          const centerB = (b.startTs + b.stopTs) / 2;
+          return Math.abs(centerA - eventTs) - Math.abs(centerB - eventTs);
+        });
         return active[0].ctx;
       }
     }
@@ -392,7 +396,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         const span = tracer.startSpan(
           `🔧 ${toolTitle}`,
           { startTime: hrTime(evTs), attributes: attrs },
-          parentContext()
+          parentContext(evTs)
         );
         const spanCtx = trace.setSpan(context.active(), span);
         openAgentPreSpans.push({ span, ctx: spanCtx, toolUseId });
@@ -440,59 +444,22 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           }
           preSpan.end(hrTime(evTs));
         } else {
-          // No matching real pre span — synthesize one from post data
-          const resp = ev.tool_response || {};
-          const syntheticInput = {
-            subagent_type: resp.agentType || "",
-            prompt: (resp.prompt || "").slice(0, 100),
-          };
-          const syntheticTitle = createToolTitle("Agent", syntheticInput);
-          const syntheticEventData = createEventData("Agent", syntheticInput);
-          addResponseToEventData(syntheticEventData, ev.tool_response);
-          const syntheticAttrs = {
-            "gen_ai.tool.name": "Agent",
-            "claude_code.hook.type": "pre_tool_use",
-            [SPAN_KIND_ATTR]: "TOOL",
-          };
-          for (const [k, v] of Object.entries(syntheticEventData)) {
-            if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
-              syntheticAttrs[k] = v;
-            }
-          }
+          // No matching real pre span — use the subagent span already created at subagent_start
           const subEntry = postAgentId ? openSubagentsByAgentId[postAgentId] : null;
-          const syntheticStartTs = subEntry ? subEntry.startTs : evTs;
-          const syntheticPreSpan = tracer.startSpan(
-            `🔧 ${syntheticTitle}`,
-            { startTime: hrTime(syntheticStartTs), attributes: syntheticAttrs },
-            parentContext()
-          );
-          const syntheticPreCtx = trace.setSpan(context.active(), syntheticPreSpan);
-          if (subEntry) {
-            const agentTag = subEntry.agentName ? ` [${subEntry.agentName}]` : "";
-            const subSpan = tracer.startSpan(
-              `🤖 Subagent${agentTag}`,
-              {
-                startTime: hrTime(subEntry.startTs),
-                attributes: {
-                  "subagent.session_id": "",
-                  "gen_ai.agent.name": subEntry.agentName || "",
-                  "claude_code.hook.type": "subagent_start",
-                  [SPAN_KIND_ATTR]: "AGENT",
-                  ...(subEntry.stopAttrs || {}),
-                },
-              },
-              syntheticPreCtx
-            );
+          if (subEntry && subEntry.span) {
+            for (const [k, v] of Object.entries(subEntry.stopAttrs || {})) {
+              subEntry.span.setAttribute(k, v);
+            }
             if (subEntry.childState && Array.isArray(subEntry.childState.events) && subEntry.childState.events.length > 0) {
-              const subCtx = trace.setSpan(context.active(), subSpan);
+              const subCtx = (openSubagentCtxByAgentId[postAgentId] || {}).ctx || trace.setSpan(context.active(), subEntry.span);
               replayEventsAsSpans(tracer, subEntry.childState.events, subCtx, subEntry.childState.stop_time || evTs);
             }
-            subSpan.end(hrTime(subEntry.stopTs || evTs));
+            subEntry.span.end(hrTime(subEntry.stopTs || evTs));
             delete openSubagentsByAgentId[postAgentId];
+            delete openSubagentCtxByAgentId[postAgentId];
             const idx = subagentSpanStack.findIndex(e => e.agentId === postAgentId);
             if (idx !== -1) subagentSpanStack.splice(idx, 1);
           }
-          syntheticPreSpan.end(hrTime(evTs));
         }
       } else {
         // Regular (non-Agent) tool: create combined span from pre+post
@@ -516,7 +483,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
         const toolSpan = tracer.startSpan(
           `🔧 ${toolTitle}`,
           { startTime: hrTime(startTs), attributes: attrs },
-          parentContext()
+          parentContext(evTs)
         );
         toolSpan.end(hrTime(evTs));
       }
@@ -630,7 +597,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
               [SPAN_KIND_ATTR]: "AGENT",
             },
           },
-          parentContext()
+          parentContext(evTs)
         );
         const containerCtx = trace.setSpan(context.active(), containerSpan);
         replayEventsAsSpans(tracer, childState.events, containerCtx, childStop);
@@ -683,7 +650,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             [SPAN_KIND_ATTR]: "LLM",
           },
         },
-        parentContext()
+        parentContext(evTs)
       );
 
       // Attach input/output messages (best-effort, max 1MB each)
@@ -735,22 +702,28 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
 
   // Close any subagents that never got a post_tool_use
   for (const [agentId, subEntry] of Object.entries(openSubagentsByAgentId)) {
-    const agentTag = subEntry.agentName ? ` [${subEntry.agentName}]` : "";
-    const span = tracer.startSpan(
-      `🤖 Subagent${agentTag}`,
-      {
-        startTime: hrTime(subEntry.startTs),
-        attributes: {
-          "gen_ai.agent.name": subEntry.agentName || "",
-          "claude_code.hook.type": "subagent_start",
-          [SPAN_KIND_ATTR]: "AGENT",
-          ...(subEntry.stopAttrs || {}),
+    let span = subEntry.span;
+    if (!span) {
+      // Defensive fallback: span should have been created at subagent_start
+      const agentTag = subEntry.agentName ? ` [${subEntry.agentName}]` : "";
+      span = tracer.startSpan(
+        `🤖 Subagent${agentTag}`,
+        {
+          startTime: hrTime(subEntry.startTs),
+          attributes: {
+            "gen_ai.agent.name": subEntry.agentName || "",
+            "claude_code.hook.type": "subagent_start",
+            [SPAN_KIND_ATTR]: "AGENT",
+          },
         },
-      },
-      parentContext()
-    );
+        parentContext()
+      );
+    }
+    for (const [k, v] of Object.entries(subEntry.stopAttrs || {})) {
+      span.setAttribute(k, v);
+    }
     if (subEntry.childState && Array.isArray(subEntry.childState.events) && subEntry.childState.events.length > 0) {
-      const subCtx = trace.setSpan(context.active(), span);
+      const subCtx = (openSubagentCtxByAgentId[agentId] || {}).ctx || trace.setSpan(context.active(), span);
       replayEventsAsSpans(tracer, subEntry.childState.events, subCtx, subEntry.childState.stop_time || stopTime);
     }
     span.end(hrTime(subEntry.stopTs || stopTime));
