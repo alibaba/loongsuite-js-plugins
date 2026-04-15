@@ -290,8 +290,25 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   let currentTurnCtx = null;
   let turnIdx = 0;
 
-  function parentContext() {
-    return currentTurnCtx !== null ? currentTurnCtx : parentCtx;
+  function parentContext(eventTs) {
+    if (eventTs !== undefined) {
+      // Find subagent time windows containing this timestamp
+      const active = [];
+      for (const [agentId, win] of Object.entries(subagentWindowMap)) {
+        if (eventTs >= win.startTs && eventTs <= win.stopTs) {
+          const entry = openSubagentCtxByAgentId[agentId];
+          if (entry) active.push({ startTs: win.startTs, ctx: entry.ctx });
+        }
+      }
+      if (active.length === 1) return active[0].ctx;
+      if (active.length > 1) {
+        // Pick the one whose startTs is closest to eventTs
+        active.sort((a, b) => Math.abs(a.startTs - eventTs) - Math.abs(b.startTs - eventTs));
+        return active[0].ctx;
+      }
+    }
+    if (currentTurnCtx) return currentTurnCtx;
+    return parentCtx;
   }
 
   // Pre-scan 1: build preToolUseMap for post_tool_use to look up matching pre
@@ -302,6 +319,26 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     }
   }
 
+  // Pre-scan 2: compute [startTs, stopTs] for each subagent (FIFO match start→stop)
+  const subagentWindowMap = {}; // agentId → { startTs, stopTs }
+  {
+    const pendingStarts = []; // { agentId, startTs }
+    for (const ev of events) {
+      if (ev.type === "subagent_start" && ev.agent_id) {
+        pendingStarts.push({ agentId: ev.agent_id, startTs: ev.timestamp || 0 });
+      } else if (ev.type === "subagent_stop" && pendingStarts.length > 0) {
+        const entry = pendingStarts.shift(); // FIFO
+        subagentWindowMap[entry.agentId] = { startTs: entry.startTs, stopTs: ev.timestamp || stopTime };
+      }
+    }
+    // Remaining starts without stops
+    for (const entry of pendingStarts) {
+      subagentWindowMap[entry.agentId] = { startTs: entry.startTs, stopTs: stopTime };
+    }
+  }
+
+  // Map agentId → { span, ctx } for time-window parent selection
+  const openSubagentCtxByAgentId = {};
 
   for (const ev of events) {
     const evType = ev.type || "";
@@ -382,30 +419,22 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             }
           }
           if (postAgentId) preSpan.setAttribute("agent.agent_id", postAgentId);
-          // Create subagent span under this real pre span
+          // Use the subagent span already created at subagent_start
           if (postAgentId && openSubagentsByAgentId[postAgentId]) {
             const subEntry = openSubagentsByAgentId[postAgentId];
-            const agentTag = subEntry.agentName ? ` [${subEntry.agentName}]` : "";
-            const subSpan = tracer.startSpan(
-              `🤖 Subagent${agentTag}`,
-              {
-                startTime: hrTime(subEntry.startTs),
-                attributes: {
-                  "subagent.session_id": "",
-                  "gen_ai.agent.name": subEntry.agentName || "",
-                  "claude_code.hook.type": "subagent_start",
-                  [SPAN_KIND_ATTR]: "AGENT",
-                  ...(subEntry.stopAttrs || {}),
-                },
-              },
-              preCtx
-            );
-            if (subEntry.childState && Array.isArray(subEntry.childState.events) && subEntry.childState.events.length > 0) {
-              const subCtx = trace.setSpan(context.active(), subSpan);
-              replayEventsAsSpans(tracer, subEntry.childState.events, subCtx, subEntry.childState.stop_time || evTs);
+            const subSpan = subEntry.span;
+            if (subSpan) {
+              for (const [k, v] of Object.entries(subEntry.stopAttrs || {})) {
+                subSpan.setAttribute(k, v);
+              }
+              if (subEntry.childState && Array.isArray(subEntry.childState.events) && subEntry.childState.events.length > 0) {
+                const subCtx = (openSubagentCtxByAgentId[postAgentId] || {}).ctx || trace.setSpan(context.active(), subSpan);
+                replayEventsAsSpans(tracer, subEntry.childState.events, subCtx, subEntry.childState.stop_time || evTs);
+              }
+              subSpan.end(hrTime(subEntry.stopTs || evTs));
             }
-            subSpan.end(hrTime(subEntry.stopTs || evTs));
             delete openSubagentsByAgentId[postAgentId];
+            delete openSubagentCtxByAgentId[postAgentId];
             const idx = subagentSpanStack.findIndex(e => e.agentId === postAgentId);
             if (idx !== -1) subagentSpanStack.splice(idx, 1);
           }
@@ -529,7 +558,23 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
     } else if (evType === "subagent_start") {
       const agentId = ev.agent_id || "";
       const agentName = ev.agent_type || "";
-      // Store data only; OTel span is created at post_tool_use time
+      // Create span now so parentContext(evTs) can use it for events in its window
+      const agentTag = agentName ? ` [${agentName}]` : "";
+      const subSpanForCtx = tracer.startSpan(
+        `🤖 Subagent${agentTag}`,
+        {
+          startTime: hrTime(evTs),
+          attributes: {
+            "subagent.session_id": ev.subagent_session_id || "",
+            "gen_ai.agent.name": agentName,
+            "claude_code.hook.type": evType,
+            [SPAN_KIND_ATTR]: "AGENT",
+          },
+        },
+        currentTurnCtx || parentCtx // subagents nest under Turn, not other subagents
+      );
+      const subCtxForWindow = trace.setSpan(context.active(), subSpanForCtx);
+      openSubagentCtxByAgentId[agentId] = { span: subSpanForCtx, ctx: subCtxForWindow };
       if (agentId) {
         openSubagentsByAgentId[agentId] = {
           agentId,
@@ -538,10 +583,10 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
           stopTs: undefined,
           stopAttrs: {},
           childState: null,
+          span: subSpanForCtx, // reference to span for later closing
         };
       }
       subagentSpanStack.push({ agentId, startTs: evTs });
-      // Do NOT create OTel span here
 
     } else if (evType === "subagent_stop") {
       const childState = ev._child_state;
