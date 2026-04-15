@@ -416,6 +416,8 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
       const subSid = ev.subagent_session_id || "";
       const agentName = ev.agent_type || "";
       const agentTag = agentName ? ` [${agentName}]` : "";
+      // Subagents are siblings under the current turn, not nested under each other
+      const subagentParentCtx = currentTurnCtx || parentCtx;
       const span = tracer.startSpan(
         `🤖 Subagent${agentTag}`,
         {
@@ -427,7 +429,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             [SPAN_KIND_ATTR]: "AGENT",
           },
         },
-        parentContext()
+        subagentParentCtx
       );
       const subCtx = trace.setSpan(context.active(), span);
       subagentSpanStack.push({ span, ctx: subCtx });
