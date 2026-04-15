@@ -290,23 +290,27 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
   let currentTurnCtx = null;
   let turnIdx = 0;
 
-  function parentContext(eventTs) {
+  function parentContext(eventTs, endTs) {
     if (eventTs !== undefined) {
-      // Find subagent time windows containing this timestamp
+      // Find subagent time windows containing this event.
+      // If endTs is provided, both start and end must be within the window.
       const active = [];
       for (const [agentId, win] of Object.entries(subagentWindowMap)) {
-        if (eventTs >= win.startTs && eventTs <= win.stopTs) {
+        const startInWindow = eventTs >= win.startTs && eventTs <= win.stopTs;
+        const endInWindow = endTs === undefined || (endTs >= win.startTs && endTs <= win.stopTs);
+        if (startInWindow && endInWindow) {
           const entry = openSubagentCtxByAgentId[agentId];
           if (entry) active.push({ startTs: win.startTs, stopTs: win.stopTs, ctx: entry.ctx });
         }
       }
       if (active.length === 1) return active[0].ctx;
       if (active.length > 1) {
-        // Concurrent subagents: pick the one whose window center is closest to eventTs
+        // Concurrent subagents: pick window whose center is closest to midpoint of the span
+        const midPoint = endTs !== undefined ? (eventTs + endTs) / 2 : eventTs;
         active.sort((a, b) => {
           const centerA = (a.startTs + a.stopTs) / 2;
           const centerB = (b.startTs + b.stopTs) / 2;
-          return Math.abs(centerA - eventTs) - Math.abs(centerB - eventTs);
+          return Math.abs(centerA - midPoint) - Math.abs(centerB - midPoint);
         });
         return active[0].ctx;
       }
@@ -687,7 +691,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             [SPAN_KIND_ATTR]: "LLM",
           },
         },
-        parentContext(requestStart)
+        parentContext(requestStart, evTs)
       );
 
       // Attach input/output messages (best-effort, max 1MB each)
