@@ -346,9 +346,12 @@ describe("replayEventsAsSpans", () => {
     expect(attrs["gen_ai.usage.output_tokens"]).toBe(50);
   });
 
-  test("creates subagent_start span", () => {
-    const events = [{ type: "subagent_start", timestamp: 1000, subagent_session_id: "sub-123" }];
+  test("subagent_start defers span creation to post_tool_use; creates span at stopTime if no post", () => {
+    // New design: subagent_start stores data only; span created at post_tool_use time
+    // With agent_id set and no matching post, span is created at end-of-function cleanup
+    const events = [{ type: "subagent_start", timestamp: 1000, subagent_session_id: "sub-123", agent_id: "ag-1", agent_type: "MyAgent" }];
     cli._replayEventsAsSpans(mockTracer, events, mockCtx, 1001);
+    // Span is created in end-of-function cleanup for unmatched subagents
     expect(mockTracer.startSpan).toHaveBeenCalledWith(
       expect.stringContaining("Subagent"), expect.any(Object), expect.anything()
     );
