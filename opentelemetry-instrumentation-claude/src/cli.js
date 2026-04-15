@@ -687,7 +687,7 @@ function replayEventsAsSpans(tracer, events, parentCtx, stopTime) {
             [SPAN_KIND_ATTR]: "LLM",
           },
         },
-        parentContext(evTs)
+        parentContext(requestStart)
       );
 
       // Attach input/output messages (best-effort, max 1MB each)
