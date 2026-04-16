@@ -106,15 +106,21 @@ echo ""
 msg "==> 正在全局安装 ${PKG_NAME}..." \
     "==> Installing ${PKG_NAME} globally..."
 
+# 本地包目录（脚本在 scripts/ 下，包根目录在上级）/ Local package root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 install_ok=false
 
+# 优先尝试 npm registry，失败时尝试本地目录安装
+# Try npm registry first; fall back to local directory install
 if npm install -g "${PKG_NAME}" --silent 2>/tmp/npm-install-opencode-err.log; then
-    msg "    ✅ npm install -g 成功" \
-        "    ✅ Installed via npm install -g"
+    msg "    ✅ npm install -g（registry）成功" \
+        "    ✅ Installed from npm registry"
     install_ok=true
-elif command -v bun &>/dev/null && bun install -g "${PKG_NAME}" 2>/dev/null; then
-    msg "    ✅ bun install -g 成功" \
-        "    ✅ Installed via bun install -g"
+elif [ -f "${PKG_DIR}/package.json" ] && npm install -g "${PKG_DIR}" --silent 2>/tmp/npm-install-opencode-err.log; then
+    msg "    ✅ npm install -g（本地目录）成功" \
+        "    ✅ Installed from local directory"
     install_ok=true
 else
     if grep -qi "EACCES\|permission denied" /tmp/npm-install-opencode-err.log 2>/dev/null; then
