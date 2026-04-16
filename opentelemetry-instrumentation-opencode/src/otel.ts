@@ -56,6 +56,7 @@ export function setupOtel(
   version: string,
   tracesDisabled: boolean,
   logsDisabled: boolean,
+  headers?: Record<string, string>,
 ): OtelProviders {
   const resource = buildResource(version)
 
@@ -63,7 +64,7 @@ export function setupOtel(
     resource,
     readers: [
       new PeriodicExportingMetricReader({
-        exporter: new OTLPMetricExporter({ url: endpoint + "/v1/metrics" }),
+        exporter: new OTLPMetricExporter({ url: endpoint + "/v1/metrics", headers }),
         exportIntervalMillis: metricsInterval,
       }),
     ],
@@ -74,7 +75,7 @@ export function setupOtel(
     const lp = new LoggerProvider({
       resource,
       processors: [
-        new BatchLogRecordProcessor(new OTLPLogExporter({ url: endpoint + "/v1/logs" }), {
+        new BatchLogRecordProcessor(new OTLPLogExporter({ url: endpoint + "/v1/logs", headers }), {
           scheduledDelayMillis: logsInterval,
         }),
       ],
@@ -86,7 +87,7 @@ export function setupOtel(
   const tracerProvider = tracesDisabled ? null : (() => {
     const tp = new BasicTracerProvider({
       resource,
-      spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: endpoint + "/v1/traces" }))],
+      spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: endpoint + "/v1/traces", headers }))],
     })
     trace.setGlobalTracerProvider(tp)
     return tp
