@@ -79,7 +79,36 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 2. 卸载全局 npm 包 / Uninstall global npm package
+# 2. 从 opencode 配置移除插件 / Remove plugin from opencode config
+# ---------------------------------------------------------------------------
+OPENCODE_CONFIG="$HOME/.config/opencode/opencode.json"
+msg "==> 从 opencode 配置移除插件..." \
+    "==> Removing plugin from opencode config..."
+
+if [ -f "$OPENCODE_CONFIG" ] && command -v node &>/dev/null; then
+    node << NODEOF
+const fs = require("fs");
+const path = "$OPENCODE_CONFIG";
+let cfg;
+try { cfg = JSON.parse(fs.readFileSync(path, "utf-8")); } catch { process.exit(0); }
+if (!Array.isArray(cfg.plugin)) process.exit(0);
+const before = cfg.plugin.length;
+cfg.plugin = cfg.plugin.filter(p => p !== "$PKG_NAME");
+if (cfg.plugin.length !== before) {
+    fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
+    process.stderr.write("    ✅ 已从配置移除插件\n");
+} else {
+    process.stderr.write("    ℹ️  配置中未找到插件，跳过\n");
+}
+NODEOF
+else
+    msg "    ℹ️  opencode 配置不存在或 node 不可用，跳过" \
+        "    ℹ️  opencode config not found or node unavailable, skipping"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# 3. 卸载全局 npm 包 / Uninstall global npm package
 # ---------------------------------------------------------------------------
 msg "==> 正在卸载 ${PKG_NAME}..." \
     "==> Uninstalling ${PKG_NAME}..."

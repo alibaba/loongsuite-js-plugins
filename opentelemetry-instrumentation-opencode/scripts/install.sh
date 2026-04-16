@@ -147,7 +147,44 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 3. Sunfire 自动检测 / Sunfire endpoint auto-detection
+# 3. 注册插件到 opencode 配置 / Register plugin in opencode config
+# ---------------------------------------------------------------------------
+msg "==> 注册插件到 opencode 配置..." \
+    "==> Registering plugin in opencode config..."
+
+OPENCODE_CONFIG_DIR="$HOME/.config/opencode"
+OPENCODE_CONFIG="$OPENCODE_CONFIG_DIR/opencode.json"
+
+mkdir -p "$OPENCODE_CONFIG_DIR"
+
+if [ ! -f "$OPENCODE_CONFIG" ]; then
+    echo '{"$schema":"https://opencode.ai/config.json","plugin":[]}' > "$OPENCODE_CONFIG"
+fi
+
+if command -v node &>/dev/null; then
+    node << NODEOF
+const fs = require("fs");
+const path = "$OPENCODE_CONFIG";
+let cfg;
+try { cfg = JSON.parse(fs.readFileSync(path, "utf-8")); } catch { cfg = {}; }
+if (!Array.isArray(cfg.plugin)) cfg.plugin = [];
+const pkg = "$PKG_NAME";
+if (!cfg.plugin.includes(pkg)) {
+    cfg.plugin.push(pkg);
+    fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
+    process.stderr.write("    ✅ 已添加插件到 $OPENCODE_CONFIG\n");
+} else {
+    process.stderr.write("    ℹ️  插件已在配置中，跳过\n");
+}
+NODEOF
+else
+    msg "    ⚠️  node 不可用，请手动将 \"${PKG_NAME}\" 加入 ${OPENCODE_CONFIG} 的 plugin 数组" \
+        "    ⚠️  node unavailable. Manually add \"${PKG_NAME}\" to plugin array in ${OPENCODE_CONFIG}"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# 4. Sunfire 自动检测 / Sunfire endpoint auto-detection
 # ---------------------------------------------------------------------------
 if [ -n "$ENDPOINT" ] && echo "$ENDPOINT" | grep -qi "sunfire"; then
     if [ -z "${LOONGSUITE_SEMCONV_DIALECT_NAME:-}" ]; then
