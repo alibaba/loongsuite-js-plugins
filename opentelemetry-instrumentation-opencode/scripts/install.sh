@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# install.sh — One-command installer for opentelemetry-instrumentation-opencode
+# install.sh — Install opentelemetry-instrumentation-opencode as a local tgz
 #
 # Usage:
-#   bash install.sh [options]
+#   bash scripts/install.sh [options]
 #
 # Options:
 #   --endpoint <url>         OTLP exporter endpoint
@@ -13,9 +13,16 @@
 
 set -euo pipefail
 
+# The package root is one directory above this script
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PKG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 PKG_NAME="@loongsuite/opentelemetry-instrumentation-opencode"
 MARKER_BEGIN="# BEGIN opentelemetry-instrumentation-opencode"
 MARKER_END="# END opentelemetry-instrumentation-opencode"
+
+OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+OTel_CONFIG_FILE="$OPENCODE_CONFIG_DIR/otel-plugin.json"
 
 # ---------------------------------------------------------------------------
 # 参数解析 / Argument parsing
@@ -38,7 +45,7 @@ while [[ $# -gt 0 ]]; do
     --lang)           FORCE_LANG="$2"; shift 2 ;;
     --lang=*)         FORCE_LANG="${1#--lang=}"; shift ;;
     -h|--help)
-      echo "Usage: bash install.sh [--endpoint <url>] [--headers <k=v>] [--service-name <name>] [--debug]"
+      echo "Usage: bash scripts/install.sh [--endpoint <url>] [--headers <k=v>] [--service-name <name>] [--debug]"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -81,7 +88,7 @@ msg "================================================" \
 echo ""
 
 # ---------------------------------------------------------------------------
-# 1. 检查 opencode 是否安装 / Check opencode is installed
+# 1. 检查 opencode / Check opencode
 # ---------------------------------------------------------------------------
 msg "==> 检查 opencode..." \
     "==> Checking opencode..."
@@ -101,57 +108,69 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 2. 全局安装 npm 包（从 registry）/ Install npm package globally from registry
+# 2. 打包 tgz / Build tgz with npm pack
 # ---------------------------------------------------------------------------
-msg "==> 正在从 npm registry 安装 ${PKG_NAME}..." \
-    "==> Installing ${PKG_NAME} from npm registry..."
+msg "==> 打包插件（npm pack）..." \
+    "==> Building plugin package (npm pack)..."
 
-if npm install -g "${PKG_NAME}" --silent 2>/tmp/npm-install-opencode-err.log; then
-    msg "    ✅ 安装成功" \
-        "    ✅ Installed successfully"
-else
-    if grep -qi "EACCES\|permission denied" /tmp/npm-install-opencode-err.log 2>/dev/null; then
-        msg "    ❌ 安装失败：Node.js 目录权限不足" \
-            "    ❌ Install failed: permission denied"
-        echo ""
-        msg "    💡 修复方案（任选其一）：" \
-            "    💡 Fix options (choose one):"
-        echo "       curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
-        echo "       nvm install --lts && nvm use --lts"
-        echo ""
-        msg "    或配置 npm prefix（无需 sudo）：" \
-            "    Or configure npm prefix (no sudo):"
-        echo '       npm config set prefix "$HOME/.local"'
-        echo '       export PATH="$HOME/.local/bin:$PATH"'
-    else
-        msg "    ❌ 安装失败，详情：" \
-            "    ❌ Install failed. Details:"
-        cat /tmp/npm-install-opencode-err.log
-    fi
-    echo ""
+cd "$PKG_DIR"
+TGZ_FILE=$(npm pack --silent 2>/dev/null)
+if [ -z "$TGZ_FILE" ] || [ ! -f "$TGZ_FILE" ]; then
+    msg "    ❌ npm pack 失败" \
+        "    ❌ npm pack failed"
     exit 1
+fi
+msg "    ✅ 已生成 ${TGZ_FILE}" \
+    "    ✅ Packed ${TGZ_FILE}"
+echo ""
+
+# ---------------------------------------------------------------------------
+# 3. 安装 tgz 到 opencode 配置目录 / Install tgz to opencode config dir
+# ---------------------------------------------------------------------------
+msg "==> 安装插件到 ${OPENCODE_CONFIG_DIR}..." \
+    "==> Installing plugin to ${OPENCODE_CONFIG_DIR}..."
+
+mkdir -p "$OPENCODE_CONFIG_DIR"
+mv -f "$TGZ_FILE" "$OPENCODE_CONFIG_DIR/"
+TGZ_DEST="$OPENCODE_CONFIG_DIR/$TGZ_FILE"
+msg "    ✅ 已移至 ${TGZ_DEST}" \
+    "    ✅ Moved to ${TGZ_DEST}"
+echo ""
+
+# Update ~/.config/opencode/package.json with the local tgz dependency
+OPENCODE_PKG="$OPENCODE_CONFIG_DIR/package.json"
+if command -v node &>/dev/null; then
+    node << NODEOF
+const fs = require("fs");
+const path = "$OPENCODE_PKG";
+let pkg;
+try { pkg = JSON.parse(fs.readFileSync(path, "utf-8")); } catch { pkg = {}; }
+if (!pkg.dependencies) pkg.dependencies = {};
+pkg.dependencies["$PKG_NAME"] = "file:./$TGZ_FILE";
+fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
+process.stderr.write("    ✅ 已写入依赖到 package.json\n");
+NODEOF
+else
+    msg "    ⚠️  node 不可用，请手动更新 ${OPENCODE_PKG}" \
+        "    ⚠️  node unavailable. Manually update ${OPENCODE_PKG}"
 fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 3. 注册插件到 opencode 配置 / Register plugin in opencode config
+# 4. 注册插件到 opencode.json / Register plugin in opencode.json
 # ---------------------------------------------------------------------------
-msg "==> 注册插件到 opencode 配置..." \
-    "==> Registering plugin in opencode config..."
+msg "==> 注册插件到 opencode.json..." \
+    "==> Registering plugin in opencode.json..."
 
-OPENCODE_CONFIG_DIR="$HOME/.config/opencode"
-OPENCODE_CONFIG="$OPENCODE_CONFIG_DIR/opencode.json"
-
-mkdir -p "$OPENCODE_CONFIG_DIR"
-
-if [ ! -f "$OPENCODE_CONFIG" ]; then
-    echo '{"$schema":"https://opencode.ai/config.json","plugin":[]}' > "$OPENCODE_CONFIG"
+OPENCODE_JSON="$OPENCODE_CONFIG_DIR/opencode.json"
+if [ ! -f "$OPENCODE_JSON" ]; then
+    echo '{"$schema":"https://opencode.ai/config.json","plugin":[]}' > "$OPENCODE_JSON"
 fi
 
 if command -v node &>/dev/null; then
     node << NODEOF
 const fs = require("fs");
-const path = "$OPENCODE_CONFIG";
+const path = "$OPENCODE_JSON";
 let cfg;
 try { cfg = JSON.parse(fs.readFileSync(path, "utf-8")); } catch { cfg = {}; }
 if (!Array.isArray(cfg.plugin)) cfg.plugin = [];
@@ -165,13 +184,13 @@ if (!cfg.plugin.includes(pkg)) {
 }
 NODEOF
 else
-    msg "    ⚠️  node 不可用，请手动将 \"${PKG_NAME}\" 加入 ${OPENCODE_CONFIG} 的 plugin 数组" \
-        "    ⚠️  node unavailable. Manually add \"${PKG_NAME}\" to plugin array in ${OPENCODE_CONFIG}"
+    msg "    ⚠️  node 不可用，请手动添加 \"${PKG_NAME}\" 到 ${OPENCODE_JSON} 的 plugin 数组" \
+        "    ⚠️  node unavailable. Manually add \"${PKG_NAME}\" to plugin array in ${OPENCODE_JSON}"
 fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 4. Sunfire 自动检测 / Sunfire endpoint auto-detection
+# 5. Sunfire 自动检测 / Sunfire endpoint auto-detection
 # ---------------------------------------------------------------------------
 if [ -n "$ENDPOINT" ] && echo "$ENDPOINT" | grep -qi "sunfire"; then
     if [ -z "${LOONGSUITE_SEMCONV_DIALECT_NAME:-}" ]; then
@@ -182,16 +201,11 @@ if [ -n "$ENDPOINT" ] && echo "$ENDPOINT" | grep -qi "sunfire"; then
 fi
 
 # ---------------------------------------------------------------------------
-# 5. 写入 JSON 配置文件 / Write JSON config file
+# 6. 写入 JSON 配置文件 / Write JSON config file
 # ---------------------------------------------------------------------------
-msg "==> 写入 JSON 配置文件..." \
-    "==> Writing JSON config file..."
+msg "==> 写入 JSON 配置文件 (otel-plugin.json)..." \
+    "==> Writing JSON config file (otel-plugin.json)..."
 
-OTel_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
-OTel_CONFIG_FILE="$OTel_CONFIG_DIR/otel-plugin.json"
-mkdir -p "$OTel_CONFIG_DIR"
-
-# Build JSON — only include fields that have values
 _json_fields=""
 _json_sep=""
 if [ -n "$ENDPOINT" ]; then
@@ -217,7 +231,7 @@ msg "    ✅ 已写入 ${OTel_CONFIG_FILE}" \
 echo ""
 
 # ---------------------------------------------------------------------------
-# 6. 写入 env 块到 shell profile / Write env block to shell profiles
+# 7. 写入 env 块到 shell profile / Write env block to shell profiles
 # ---------------------------------------------------------------------------
 msg "==> 写入环境变量到 shell 配置文件..." \
     "==> Writing environment variables to shell profiles..."
@@ -264,7 +278,7 @@ write_env_to_profile "$HOME/.zshenv"       || true
 echo ""
 
 # ---------------------------------------------------------------------------
-# 7. 完成 / Done
+# 8. 完成 / Done
 # ---------------------------------------------------------------------------
 msg "================================================" \
     "================================================"
@@ -281,24 +295,8 @@ msg "1. 重新加载 shell 配置：" \
     "1. Reload your shell config:"
 echo "   source ~/.bashrc   # or ~/.zshrc"
 echo ""
-
-if [ -z "$ENDPOINT" ] && [ "$DEBUG_MODE" = "false" ]; then
-    msg "2. 配置遥测后端（二选一）：" \
-        "2. Configure telemetry backend (choose one):"
-    echo ""
-    msg "   # 任意 OTLP 兼容后端（Sunfire、Jaeger 等）：" \
-        "   # Any OTLP-compatible backend (Sunfire, Jaeger, etc.):"
-    echo "   export OTEL_EXPORTER_OTLP_ENDPOINT='https://your-endpoint:4318'"
-    echo "   export OTEL_EXPORTER_OTLP_HEADERS='authorization=Bearer <token>'"
-    echo ""
-    msg "   # 控制台调试（无需后端）：" \
-        "   # Console debug (no backend needed):"
-    echo "   export CLAUDE_TELEMETRY_DEBUG=1"
-    echo ""
-    msg "3. 启动 opencode：" \
-        "3. Start opencode:"
-fi
-
+msg "2. 启动 opencode（bun 会自动安装本地依赖）：" \
+    "2. Start opencode (bun will install the local tgz automatically):"
 echo "   opencode"
 echo ""
 msg "卸载：bash scripts/uninstall.sh" \
