@@ -24,30 +24,54 @@
 
 ---
 
-## ⚡ 快速开始
+## ⚡ 快速安装（一行命令）
 
 ```bash
-# 1. 安装插件
-opencode install @loongsuite/opentelemetry-instrumentation-opencode
+curl -fsSL https://raw.githubusercontent.com/alibaba/loongsuite-js-plugins/opencode/opentelemetry-instrumentation-opencode/scripts/install.sh | bash -s -- \
+  --endpoint "https://your-otlp-endpoint:4318" \
+  --service-name "my-opencode-agent"
+```
 
-# 2. 配置 OTLP 端点
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
+安装完成后重载 Shell：
 
-# 3. 启动 opencode，遥测数据自动上报
-opencode
+```bash
+source ~/.bashrc   # 或 source ~/.zshrc
+```
+
+脚本会自动：安装 npm 包、将 OTLP 配置写入 `~/.bashrc`，无需手动 export。
+
+**参数说明：**
+
+| 参数 | 说明 |
+|------|------|
+| `--endpoint` | OTLP 上报地址（支持任意兼容后端）|
+| `--headers` | 认证请求头，逗号分隔，如 `authorization=Bearer xxx` |
+| `--service-name` | Trace 中的服务名 |
+| `--debug` | 启用控制台输出（无需后端，本地调试用）|
+
+**本地调试模式（无需 OTLP 后端）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/alibaba/loongsuite-js-plugins/opencode/opentelemetry-instrumentation-opencode/scripts/install.sh | bash -s -- --debug
 ```
 
 ---
 
 ## 🚀 安装方法
 
-### 方式一：opencode plugin（推荐）
+### 方式一：一键脚本（推荐）
+
+```bash
+bash scripts/install.sh --endpoint "https://your-endpoint:4318"
+```
+
+### 方式二：opencode plugin 命令
 
 ```bash
 opencode install @loongsuite/opentelemetry-instrumentation-opencode
 ```
 
-### 方式二：手动配置
+### 方式三：手动配置
 
 在 opencode 配置文件中添加：
 
@@ -231,6 +255,18 @@ opentelemetry-instrumentation-opencode/
 4. **进程退出保障**：拦截 `process.exit` 并统一 SIGTERM/SIGINT 信号处理，确保进程退出前执行 `forceFlush` + `shutdown`，最后一批 Span 不丢失。
 
 5. **端点探测**：启动时 TCP 探测 OTLP 端点连通性，不可达时打印警告，不阻塞插件正常运行。
+
+---
+
+## 🗑️ 卸载
+
+```bash
+bash scripts/uninstall.sh
+```
+
+卸载脚本会自动：
+- 清理 `~/.bashrc` / `~/.zshrc` / `~/.bash_profile` 中的环境变量配置块
+- 卸载全局 npm 包
 
 ---
 
