@@ -24,7 +24,7 @@ export function handleSessionCreated(e: EventSessionCreated, ctx: HandlerContext
   return ctx.log("info", "otel: session.created", { sessionID, createdAt })
 }
 
-function sweepSession(sessionID: string, ctx: HandlerContext, error?: boolean) {
+function sweepSession(sessionID: string, ctx: HandlerContext, error?: boolean, errorMessage?: string) {
   for (const [id, perm] of ctx.pendingPermissions) {
     if (perm.sessionID === sessionID) ctx.pendingPermissions.delete(id)
   }
@@ -58,9 +58,12 @@ function sweepSession(sessionID: string, ctx: HandlerContext, error?: boolean) {
   }
   const activeInvocation = ctx.activeInvocations.get(sessionID)
   if (activeInvocation) {
+    const errMsg = errorMessage ?? "session ended"
     if (error) {
-      activeInvocation.agentSpan.setStatus({ code: SpanStatusCode.ERROR, message: "session ended" })
-      activeInvocation.entrySpan.setStatus({ code: SpanStatusCode.ERROR, message: "session ended" })
+      activeInvocation.agentSpan.setStatus({ code: SpanStatusCode.ERROR, message: errMsg })
+      activeInvocation.agentSpan.addEvent("session.error", { error: errMsg })
+      activeInvocation.entrySpan.setStatus({ code: SpanStatusCode.ERROR, message: errMsg })
+      activeInvocation.entrySpan.addEvent("session.error", { error: errMsg })
     } else {
       activeInvocation.agentSpan.setStatus({ code: SpanStatusCode.OK })
       activeInvocation.entrySpan.setStatus({ code: SpanStatusCode.OK })
@@ -133,18 +136,9 @@ export function handleSessionError(e: EventSessionError, ctx: HandlerContext) {
   const sessionID = rawID ?? "unknown"
   const error = errorSummary(e.properties.error)
   if (rawID) ctx.sessionTotals.delete(rawID)
-  sweepSession(sessionID, ctx, true)
-
-  const activeInvocation = ctx.activeInvocations.get(sessionID)
-  if (activeInvocation) {
-    ctx.activeInvocations.delete(sessionID)
-    activeInvocation.agentSpan.setStatus({ code: SpanStatusCode.ERROR, message: error })
-    activeInvocation.agentSpan.addEvent("session.error", { error })
-    activeInvocation.agentSpan.end()
-    activeInvocation.entrySpan.setStatus({ code: SpanStatusCode.ERROR, message: error })
-    activeInvocation.entrySpan.addEvent("session.error", { error })
-    activeInvocation.entrySpan.end()
-  }
+  // sweepSession handles activeInvocations, activeToolSpans, activeMessageSpans etc.
+  // Pass errorMessage so it sets the correct status/event on invocation spans.
+  sweepSession(sessionID, ctx, true, error)
   ctx.logger.emit({
     severityNumber: SeverityNumber.ERROR,
     severityText: "ERROR",

@@ -163,16 +163,26 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
   // (session span + final LLM span) gets exported.
   const originalExit = process.exit.bind(process)
   let exitIntercepted = false
-  process.exit = ((code?: number) => {
+
+  function interceptedExit(code?: number): never {
     if (exitIntercepted) return originalExit(code) as never
     exitIntercepted = true
     shutdown()
       .then(() => originalExit(code ?? 0))
       .catch(() => originalExit(code ?? 1))
-  }) as never
+    return undefined as never
+  }
 
-  process.on("SIGTERM", () => { shutdown().then(() => originalExit(0)).catch(() => originalExit(1)) })
-  process.on("SIGINT",  () => { shutdown().then(() => originalExit(0)).catch(() => originalExit(1)) })
+  process.exit = interceptedExit as typeof process.exit
+
+  // For SIGTERM/SIGINT: use the same interceptedExit gate to prevent
+  // concurrent races between the signal handlers and process.exit().
+  process.on("SIGTERM", () => interceptedExit(0))
+  process.on("SIGINT",  () => interceptedExit(0))
+
+  // `beforeExit` fires when the event loop drains (no pending async work).
+  // A lightweight flush attempt here covers the case where opencode exits
+  // cleanly without calling process.exit() directly.
   process.on("beforeExit", () => { shutdown().catch(() => {}) })
 
   const safe = <T extends unknown[]>(
