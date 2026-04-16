@@ -1,4 +1,4 @@
-import type { Plugin } from "@opencode-ai/plugin"
+import type { Plugin, AuthHook } from "@opencode-ai/plugin"
 import { SeverityNumber } from "@opentelemetry/api-logs"
 import { logs } from "@opentelemetry/api-logs"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
@@ -361,7 +361,7 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
     auth: {
       provider: "loongsuite-opentelemetry",
       methods: [],
-    } as import("@opencode-ai/plugin").AuthHook,
+    } as AuthHook,
   }
 }
 
@@ -372,4 +372,4 @@ export const server = OtelPlugin
 export const auth = {
   provider: "loongsuite-opentelemetry",
   methods: [],
-} as import("@opencode-ai/plugin").AuthHook
+} as AuthHook
