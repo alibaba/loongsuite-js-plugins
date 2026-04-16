@@ -32,13 +32,16 @@ curl -fsSL https://raw.githubusercontent.com/alibaba/loongsuite-js-plugins/openc
   --service-name "my-opencode-agent"
 ```
 
-安装完成后重载 Shell：
+安装完成后重载 Shell 并重启 OpenCode：
 
 ```bash
 source ~/.bashrc   # 或 source ~/.zshrc
 ```
 
-脚本会自动：安装 npm 包、将 OTLP 配置写入 `~/.bashrc`，无需手动 export。
+脚本会自动：
+1. `npm install` 安装 OTel 依赖
+2. 写入口文件到 `~/.config/opencode/plugins/`（OpenCode 自动加载）
+3. 将 OTLP 配置写入 `~/.bashrc` / `~/.zshrc`
 
 **参数说明：**
 
@@ -46,7 +49,7 @@ source ~/.bashrc   # 或 source ~/.zshrc
 |------|------|
 | `--endpoint` | OTLP 上报地址（支持任意兼容后端）|
 | `--headers` | 认证请求头，逗号分隔，如 `authorization=Bearer xxx` |
-| `--service-name` | Trace 中的服务名 |
+| `--service-name` | Trace 中的服务名（写入 `OTEL_SERVICE_NAME`）|
 | `--debug` | 启用控制台输出（无需后端，本地调试用）|
 
 **本地调试模式（无需 OTLP 后端）：**
@@ -62,18 +65,22 @@ curl -fsSL https://raw.githubusercontent.com/alibaba/loongsuite-js-plugins/openc
 ### 方式一：一键脚本（推荐）
 
 ```bash
-bash scripts/install.sh --endpoint "https://your-endpoint:4318"
+# 克隆仓库后在插件目录执行
+bash scripts/install.sh \
+  --endpoint "https://your-endpoint:4318" \
+  --service-name "my-agent"
 ```
 
-### 方式二：opencode plugin 命令
+### 方式二：手动配置
 
-```bash
-opencode install @loongsuite/opentelemetry-instrumentation-opencode
+将以下文件写入 `~/.config/opencode/plugins/opentelemetry-instrumentation-opencode.ts`：
+
+```ts
+import { OtelPlugin } from "/absolute/path/to/opentelemetry-instrumentation-opencode/src/index.ts"
+export default OtelPlugin
 ```
 
-### 方式三：手动配置
-
-在 opencode 配置文件中添加：
+然后设置环境变量：
 
 ```json
 {
