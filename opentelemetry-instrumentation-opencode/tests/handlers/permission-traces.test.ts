@@ -3,6 +3,7 @@ import { makeCtx, type SpySpan } from "../helpers.ts"
 import { handlePermissionUpdated, handlePermissionReplied } from "../../src/handlers/permission.ts"
 import { handleSessionCreated } from "../../src/handlers/session.ts"
 import { handleMessagePartUpdated } from "../../src/handlers/message.ts"
+import { SPAN_KIND_ATTR } from "../../src/util.ts"
 import type { EventPermissionUpdated, EventPermissionReplied, EventSessionCreated, EventMessagePartUpdated } from "@opencode-ai/sdk"
 
 function sessionCreatedEvent(id = "sess_1"): EventSessionCreated {
@@ -72,7 +73,7 @@ describe("permission traces", () => {
     handlePermissionUpdated(permUpdatedEvent(), ctx)
     handlePermissionReplied(permRepliedEvent({ response: "allow" }), ctx)
 
-    const toolSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "TOOL")!
+    const toolSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "TOOL")!
     expect(toolSpan.events).toHaveLength(1)
     expect(toolSpan.events[0]!.name).toBe("permission.decision")
     expect(toolSpan.events[0]!.attributes?.decision).toBe("accept")
@@ -87,7 +88,7 @@ describe("permission traces", () => {
     handlePermissionUpdated(permUpdatedEvent(), ctx)
     handlePermissionReplied(permRepliedEvent({ response: "deny" }), ctx)
 
-    const toolSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "TOOL")!
+    const toolSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "TOOL")!
     expect(toolSpan.events[0]!.attributes?.decision).toBe("reject")
   })
 
