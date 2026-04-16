@@ -89,7 +89,11 @@ describe("session traces", () => {
     expect(entry.ended).toBe(true)
     expect(agent.status.code).toBe(SpanStatusCode.ERROR)
     expect(entry.status.code).toBe(SpanStatusCode.ERROR)
-    expect(agent.events.length).toBe(0)
+    // sweepSession now adds session.error event to both spans (moved from handleSessionError)
+    expect(agent.events.length).toBe(1)
+    expect(agent.events[0]!.name).toBe("session.error")
+    expect(entry.events.length).toBe(1)
+    expect(entry.events[0]!.name).toBe("session.error")
     expect(ctx.activeInvocations.size).toBe(0)
   })
 
