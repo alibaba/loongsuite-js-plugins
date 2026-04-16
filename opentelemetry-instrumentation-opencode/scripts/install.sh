@@ -7,7 +7,7 @@
 # Options:
 #   --endpoint <url>         OTLP exporter endpoint
 #   --headers <k=v,k=v>      OTLP headers (comma-separated key=value)
-#   --service-name <name>    Service name (written to OTEL_RESOURCE_ATTRIBUTES)
+#   --service-name <name>    Service name (written to OTEL_SERVICE_NAME)
 #   --debug                  Enable debug mode (console output, no backend needed)
 #   --lang zh|en             Force output language
 
@@ -28,15 +28,15 @@ FORCE_LANG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --endpoint)   ENDPOINT="$2"; shift 2 ;;
-    --endpoint=*) ENDPOINT="${1#--endpoint=}"; shift ;;
-    --headers)    HEADERS="$2"; shift 2 ;;
-    --headers=*)  HEADERS="${1#--headers=}"; shift ;;
-    --service-name) SERVICE_NAME="$2"; shift 2 ;;
+    --endpoint)       ENDPOINT="$2"; shift 2 ;;
+    --endpoint=*)     ENDPOINT="${1#--endpoint=}"; shift ;;
+    --headers)        HEADERS="$2"; shift 2 ;;
+    --headers=*)      HEADERS="${1#--headers=}"; shift ;;
+    --service-name)   SERVICE_NAME="$2"; shift 2 ;;
     --service-name=*) SERVICE_NAME="${1#--service-name=}"; shift ;;
-    --debug)      DEBUG_MODE="true"; shift ;;
-    --lang)       FORCE_LANG="$2"; shift 2 ;;
-    --lang=*)     FORCE_LANG="${1#--lang=}"; shift ;;
+    --debug)          DEBUG_MODE="true"; shift ;;
+    --lang)           FORCE_LANG="$2"; shift 2 ;;
+    --lang=*)         FORCE_LANG="${1#--lang=}"; shift ;;
     -h|--help)
       echo "Usage: bash install.sh [--endpoint <url>] [--headers <k=v>] [--service-name <name>] [--debug]"
       exit 0 ;;
@@ -101,27 +101,14 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 2. 全局安装 npm 包 / Install npm package globally
+# 2. 全局安装 npm 包（从 registry）/ Install npm package globally from registry
 # ---------------------------------------------------------------------------
-msg "==> 正在全局安装 ${PKG_NAME}..." \
-    "==> Installing ${PKG_NAME} globally..."
+msg "==> 正在从 npm registry 安装 ${PKG_NAME}..." \
+    "==> Installing ${PKG_NAME} from npm registry..."
 
-# 本地包目录（脚本在 scripts/ 下，包根目录在上级）/ Local package root
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PKG_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-
-install_ok=false
-
-# 优先尝试 npm registry，失败时尝试本地目录安装
-# Try npm registry first; fall back to local directory install
 if npm install -g "${PKG_NAME}" --silent 2>/tmp/npm-install-opencode-err.log; then
-    msg "    ✅ npm install -g（registry）成功" \
-        "    ✅ Installed from npm registry"
-    install_ok=true
-elif [ -f "${PKG_DIR}/package.json" ] && npm install -g "${PKG_DIR}" --silent 2>/tmp/npm-install-opencode-err.log; then
-    msg "    ✅ npm install -g（本地目录）成功" \
-        "    ✅ Installed from local directory"
-    install_ok=true
+    msg "    ✅ 安装成功" \
+        "    ✅ Installed successfully"
 else
     if grep -qi "EACCES\|permission denied" /tmp/npm-install-opencode-err.log 2>/dev/null; then
         msg "    ❌ 安装失败：Node.js 目录权限不足" \
@@ -172,7 +159,7 @@ const pkg = "$PKG_NAME";
 if (!cfg.plugin.includes(pkg)) {
     cfg.plugin.push(pkg);
     fs.writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
-    process.stderr.write("    ✅ 已添加插件到 $OPENCODE_CONFIG\n");
+    process.stderr.write("    ✅ 已添加插件到 opencode.json\n");
 } else {
     process.stderr.write("    ℹ️  插件已在配置中，跳过\n");
 }
@@ -195,7 +182,7 @@ if [ -n "$ENDPOINT" ] && echo "$ENDPOINT" | grep -qi "sunfire"; then
 fi
 
 # ---------------------------------------------------------------------------
-# 4. 写入 shell profile / Write env block to shell profiles
+# 5. 写入 env 块到 shell profile / Write env block to shell profiles
 # ---------------------------------------------------------------------------
 msg "==> 写入环境变量到 shell 配置文件..." \
     "==> Writing environment variables to shell profiles..."
@@ -205,14 +192,15 @@ build_env_block() {
     echo "${MARKER_BEGIN}"
     if [ "$DEBUG_MODE" = "true" ]; then
         echo "export CLAUDE_TELEMETRY_DEBUG=1"
-    elif [ -n "$ENDPOINT" ]; then
+    fi
+    if [ -n "$ENDPOINT" ]; then
         echo "export OTEL_EXPORTER_OTLP_ENDPOINT=\"${ENDPOINT}\""
     fi
     if [ -n "$HEADERS" ]; then
         echo "export OTEL_EXPORTER_OTLP_HEADERS=\"${HEADERS}\""
     fi
     if [ -n "$SERVICE_NAME" ]; then
-        echo "export OTEL_RESOURCE_ATTRIBUTES=\"service.name=${SERVICE_NAME}\""
+        echo "export OTEL_SERVICE_NAME=\"${SERVICE_NAME}\""
     fi
     echo "export OTEL_LOGS_EXPORTER=otlp"
     if [ -n "${LOONGSUITE_SEMCONV_DIALECT_NAME:-}" ]; then
@@ -224,7 +212,6 @@ build_env_block() {
 write_env_to_profile() {
     local file="$1"
     [ -f "$file" ] || return 0
-    # Remove existing block first
     if grep -q "${MARKER_BEGIN}" "$file" 2>/dev/null; then
         local tmp
         tmp=$(mktemp)
@@ -238,10 +225,11 @@ write_env_to_profile() {
 write_env_to_profile "$HOME/.bashrc"       || true
 write_env_to_profile "$HOME/.zshrc"        || true
 write_env_to_profile "$HOME/.bash_profile" || true
+write_env_to_profile "$HOME/.zshenv"       || true
 echo ""
 
 # ---------------------------------------------------------------------------
-# 5. 完成 / Done
+# 6. 完成 / Done
 # ---------------------------------------------------------------------------
 msg "================================================" \
     "================================================"
