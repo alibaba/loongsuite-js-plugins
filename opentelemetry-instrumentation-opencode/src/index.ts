@@ -87,6 +87,7 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
     config.tracesDisabled,
     config.logsDisabled,
     parsedHeaders,
+    config.serviceName,
   )
   await log("info", "OTel SDK initialized", { tracesEnabled: !config.tracesDisabled, logsEnabled: !config.logsDisabled })
 

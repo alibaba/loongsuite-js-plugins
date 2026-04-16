@@ -16,9 +16,9 @@ import type { Instruments } from "./types.ts"
  * `host.arch`. Additional attributes from `OTEL_RESOURCE_ATTRIBUTES` are merged in and
  * may override the defaults.
  */
-export function buildResource(version: string) {
+export function buildResource(version: string, serviceName?: string) {
   const attrs: Record<string, string> = {
-    [ATTR_SERVICE_NAME]: process.env["OTEL_SERVICE_NAME"] ?? "opencode",
+    [ATTR_SERVICE_NAME]: serviceName ?? process.env["OTEL_SERVICE_NAME"] ?? "opencode",
     "app.version": version,
     "os.type": process.platform,
     [ATTR_HOST_ARCH]: process.arch,
@@ -57,8 +57,9 @@ export function setupOtel(
   tracesDisabled: boolean,
   logsDisabled: boolean,
   headers?: Record<string, string>,
+  serviceName?: string,
 ): OtelProviders {
-  const resource = buildResource(version)
+  const resource = buildResource(version, serviceName)
 
   const meterProvider = new MeterProvider({
     resource,
