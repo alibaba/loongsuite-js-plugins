@@ -1,6 +1,6 @@
 # @loongsuite/opentelemetry-instrumentation-opencode
 
-OpenTelemetry instrumentation plugin for [OpenCode](https://opencode.ai) — export sessions, traces, metrics, and logs to any OTLP-compatible backend (Jaeger, Grafana, SigNoz, Alibaba Cloud ARMS, etc.).
+OpenTelemetry instrumentation plugin for [OpenCode](https://opencode.ai) — export sessions, traces, metrics, and logs to any OTLP-compatible backend (Jaeger, Alibaba Sunfire, Grafana, SigNoz, Alibaba Cloud ARMS, etc.).
 
 ## Features
 
