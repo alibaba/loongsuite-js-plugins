@@ -1,6 +1,6 @@
 # opentelemetry-instrumentation-opencode
 
-为 [OpenCode](https://opencode.ai) 提供 OpenTelemetry 可观测能力，自动采集 session 级别的 Trace、Metrics 和 Logs，并通过 OTLP 协议上报到任意兼容后端（Jaeger、Grafana、SigNoz、阿里云 ARMS 等）。
+为 [OpenCode](https://opencode.ai) 提供 OpenTelemetry 可观测能力，自动采集 session 级别的 Trace、Metrics 和 Logs，并通过 OTLP 协议上报到任意兼容后端（Jaeger、Alibaba Sunfire, Grafana、SigNoz、阿里云 ARMS 等）。
 
 ---
 
@@ -27,8 +27,8 @@
 ## ⚡ 快速安装（一行命令）
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/alibaba/loongsuite-js-plugins/opencode/opentelemetry-instrumentation-opencode/scripts/install.sh | bash -s -- \
-  --endpoint "https://your-otlp-endpoint:4318" \
+curl -fsSL https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/agenttrack/opencode/remote-install.sh | bash -s -- \
+  --endpoint "https://your-endpoint:4318" \
   --service-name "my-opencode-agent"
 ```
 
@@ -51,12 +51,6 @@ source ~/.bashrc   # 或 source ~/.zshrc
 | `--headers` | 认证请求头，逗号分隔，如 `authorization=Bearer xxx` |
 | `--service-name` | Trace 中的服务名（写入 `OTEL_SERVICE_NAME`）|
 | `--debug` | 启用控制台输出（无需后端，本地调试用）|
-
-**本地调试模式（无需 OTLP 后端）：**
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/alibaba/loongsuite-js-plugins/opencode/opentelemetry-instrumentation-opencode/scripts/install.sh | bash -s -- --debug
-```
 
 ---
 
@@ -136,29 +130,6 @@ export default OtelPlugin
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | 端点含 `sunfire` 时自动切换到阿里集团方言 |
 
 ### 配置示例
-
-**接入 Grafana Cloud：**
-
-```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT="https://otlp-gateway-<region>.grafana.net/otlp"
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic <base64-token>"
-```
-
-**接入阿里云 ARMS：**
-
-```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT="https://arms-opentelemetry-<region>.aliyuncs.com"
-export OTEL_EXPORTER_OTLP_HEADERS="Authentication=<arms-token>"
-# sunfire 端点自动启用 gen_ai.span_kind_name，也可手动指定：
-export LOONGSUITE_SEMCONV_DIALECT_NAME=ALIBABA_GROUP
-```
-
-**本地调试（Jaeger）：**
-
-```bash
-docker run -p 4318:4318 -p 16686:16686 jaegertracing/all-in-one
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
-```
 
 **禁用部分指标：**
 
