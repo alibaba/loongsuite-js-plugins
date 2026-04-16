@@ -182,7 +182,42 @@ if [ -n "$ENDPOINT" ] && echo "$ENDPOINT" | grep -qi "sunfire"; then
 fi
 
 # ---------------------------------------------------------------------------
-# 5. 写入 env 块到 shell profile / Write env block to shell profiles
+# 5. 写入 JSON 配置文件 / Write JSON config file
+# ---------------------------------------------------------------------------
+msg "==> 写入 JSON 配置文件..." \
+    "==> Writing JSON config file..."
+
+OTel_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+OTel_CONFIG_FILE="$OTel_CONFIG_DIR/otel-plugin.json"
+mkdir -p "$OTel_CONFIG_DIR"
+
+# Build JSON — only include fields that have values
+_json_fields=""
+_json_sep=""
+if [ -n "$ENDPOINT" ]; then
+    _json_fields="${_json_fields}${_json_sep}  \"endpoint\": \"${ENDPOINT}\""
+    _json_sep=$',\n'
+fi
+if [ -n "$SERVICE_NAME" ]; then
+    _json_fields="${_json_fields}${_json_sep}  \"serviceName\": \"${SERVICE_NAME}\""
+    _json_sep=$',\n'
+fi
+if [ -n "$HEADERS" ]; then
+    _json_fields="${_json_fields}${_json_sep}  \"headers\": \"${HEADERS}\""
+    _json_sep=$',\n'
+fi
+if [ -n "${LOONGSUITE_SEMCONV_DIALECT_NAME:-}" ]; then
+    _json_fields="${_json_fields}${_json_sep}  \"semconvDialect\": \"${LOONGSUITE_SEMCONV_DIALECT_NAME}\""
+    _json_sep=$',\n'
+fi
+
+printf '{\n%s\n}\n' "$_json_fields" > "$OTel_CONFIG_FILE"
+msg "    ✅ 已写入 ${OTel_CONFIG_FILE}" \
+    "    ✅ Written to ${OTel_CONFIG_FILE}"
+echo ""
+
+# ---------------------------------------------------------------------------
+# 6. 写入 env 块到 shell profile / Write env block to shell profiles
 # ---------------------------------------------------------------------------
 msg "==> 写入环境变量到 shell 配置文件..." \
     "==> Writing environment variables to shell profiles..."
@@ -229,7 +264,7 @@ write_env_to_profile "$HOME/.zshenv"       || true
 echo ""
 
 # ---------------------------------------------------------------------------
-# 6. 完成 / Done
+# 7. 完成 / Done
 # ---------------------------------------------------------------------------
 msg "================================================" \
     "================================================"
