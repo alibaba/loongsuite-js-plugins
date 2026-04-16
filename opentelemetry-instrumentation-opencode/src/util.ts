@@ -6,7 +6,10 @@ import type { HandlerContext } from "./types.ts"
 //   LOONGSUITE_SEMCONV_DIALECT_NAME=ALIBABA_GROUP  → gen_ai.span_kind_name
 //   endpoint contains "sunfire"                    → gen_ai.span_kind_name
 //   otherwise                                      → gen_ai.span.kind (OTel default)
-const _sunfireDetected = (process.env["OTEL_EXPORTER_OTLP_ENDPOINT"] ?? "").includes("sunfire")
+const _endpoint =
+  process.env["OTEL_EXPORTER_OTLP_ENDPOINT"] ??
+  process.env["OPENCODE_OTLP_ENDPOINT"] ?? ""
+const _sunfireDetected = _endpoint.includes("sunfire")
 export const SPAN_KIND_ATTR =
   process.env["LOONGSUITE_SEMCONV_DIALECT_NAME"] === "ALIBABA_GROUP" || _sunfireDetected
     ? "gen_ai.span_kind_name"
