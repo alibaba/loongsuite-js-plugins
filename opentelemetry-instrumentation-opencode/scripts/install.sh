@@ -257,7 +257,7 @@ write_env_to_profile() {
 write_env_to_profile "$HOME/.bashrc"       || true
 write_env_to_profile "$HOME/.zshrc"        || true
 write_env_to_profile "$HOME/.bash_profile" || true
-write_env_to_profile "$HOME/.zshenv"       || true
+
 echo ""
 
 # ---------------------------------------------------------------------------
