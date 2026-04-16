@@ -357,5 +357,19 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
           break
       }
     }),
+    // Stub: opencode TUI worker accesses plugin.auth without null-check
+    auth: {
+      provider: "loongsuite-opentelemetry",
+      methods: [],
+    } as import("@opencode-ai/plugin").AuthHook,
   }
 }
+
+/** PluginModule entry point — opencode looks for `server` export */
+export const server = OtelPlugin
+
+/** Module-level auth stub — opencode server loader accesses module.auth */
+export const auth = {
+  provider: "loongsuite-opentelemetry",
+  methods: [],
+} as import("@opencode-ai/plugin").AuthHook
