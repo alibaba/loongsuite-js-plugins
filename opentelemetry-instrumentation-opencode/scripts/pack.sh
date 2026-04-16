@@ -8,7 +8,7 @@
 #
 # 上传到 OSS（需要有权限的账号执行）：
 #   ossutil cp dist/opentelemetry-instrumentation-opencode.tar.gz \
-#     oss://your-bucket/your-path/opentelemetry-instrumentation-opencode.tar.gz \
+#     oss://arms-apm-cn-hangzhou-pre/agenttrack/opencode/opentelemetry-instrumentation-opencode.tar.gz \
 #     --acl public-read
 
 set -euo pipefail
@@ -51,11 +51,11 @@ echo ""
 echo "下一步 — 上传到 OSS："
 echo ""
 echo "  ossutil cp $OUTPUT \\"
-echo "    oss://your-bucket/your-path/${PLUGIN_NAME}.tar.gz \\"
+echo "    oss://arms-apm-cn-hangzhou-pre/agenttrack/opencode/${PLUGIN_NAME}.tar.gz \\"
 echo "    --acl public-read"
 echo ""
 echo "上传后验证："
-echo "  curl -o /dev/null -sI https://your-bucket.oss-region.aliyuncs.com/your-path/${PLUGIN_NAME}.tar.gz | head -1"
+echo "  curl -o /dev/null -sI https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/agenttrack/opencode/${PLUGIN_NAME}.tar.gz | head -1"
 echo ""
 echo "一行安装命令："
-echo "  curl -fsSL https://your-bucket.oss-region.aliyuncs.com/your-path/remote-install.sh | bash"
+echo "  curl -fsSL https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/agenttrack/opencode/remote-install.sh | bash"

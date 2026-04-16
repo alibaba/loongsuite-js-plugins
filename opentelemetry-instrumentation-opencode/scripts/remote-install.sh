@@ -22,7 +22,7 @@ set -euo pipefail
 # ============================================================
 # Defaults
 # ============================================================
-DEFAULT_TARBALL_URL="https://your-bucket.oss-region.aliyuncs.com/your-path/opentelemetry-instrumentation-opencode.tar.gz"
+DEFAULT_TARBALL_URL="https://arms-apm-cn-hangzhou-pre.oss-cn-hangzhou.aliyuncs.com/agenttrack/opencode/opentelemetry-instrumentation-opencode.tar.gz"
 TARBALL_URL="${OTEL_OPENCODE_TARBALL_URL:-$DEFAULT_TARBALL_URL}"
 PLUGIN_NAME="opentelemetry-instrumentation-opencode"
 INSTALL_DIR="${HOME}/.cache/opentelemetry.instrumentation.opencode/package"
