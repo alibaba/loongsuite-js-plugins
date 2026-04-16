@@ -18,7 +18,7 @@ import type { Instruments } from "./types.ts"
  */
 export function buildResource(version: string) {
   const attrs: Record<string, string> = {
-    [ATTR_SERVICE_NAME]: "opencode",
+    [ATTR_SERVICE_NAME]: process.env["OTEL_SERVICE_NAME"] ?? "opencode",
     "app.version": version,
     "os.type": process.platform,
     [ATTR_HOST_ARCH]: process.arch,
