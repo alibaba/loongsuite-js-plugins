@@ -3,6 +3,7 @@ import { makeCtx } from "../helpers.ts"
 import { handleMessageUpdated, handleMessagePartUpdated } from "../../src/handlers/message.ts"
 import { handleSessionCreated } from "../../src/handlers/session.ts"
 import { SpanStatusCode } from "@opentelemetry/api"
+import { SPAN_KIND_ATTR } from "../../src/util.ts"
 import type { EventMessageUpdated, EventMessagePartUpdated, EventSessionCreated } from "@opencode-ai/sdk"
 
 function sessionCreatedEvent(id = "sess_1", createdAt = 1000): EventSessionCreated {
@@ -144,11 +145,11 @@ describe("message traces", () => {
     handleMessagePartUpdated(textPartEvent({ text: "Hello", timeStart: 900 }), ctx)
     expect(ctx.activeMessageSpans.size).toBe(1)
     expect(spyTracer!.spans).toHaveLength(4)
-    expect(spyTracer!.spans[0]!.attributes["gen_ai.span.kind"]).toBe("ENTRY")
-    expect(spyTracer!.spans[1]!.attributes["gen_ai.span.kind"]).toBe("AGENT")
-    expect(spyTracer!.spans[2]!.attributes["gen_ai.span.kind"]).toBe("STEP")
+    expect(spyTracer!.spans[0]!.attributes[SPAN_KIND_ATTR]).toBe("ENTRY")
+    expect(spyTracer!.spans[1]!.attributes[SPAN_KIND_ATTR]).toBe("AGENT")
+    expect(spyTracer!.spans[2]!.attributes[SPAN_KIND_ATTR]).toBe("STEP")
     const llmSpan = spyTracer!.spans[3]!
-    expect(llmSpan.attributes["gen_ai.span.kind"]).toBe("LLM")
+    expect(llmSpan.attributes[SPAN_KIND_ATTR]).toBe("LLM")
     handleMessageUpdated(assistantMessageEvent(), ctx)
     expect(llmSpan.name).toBe("chat claude-sonnet-4-20250514")
     expect(llmSpan.attributes["gen_ai.provider.name"]).toBe("anthropic")
@@ -162,8 +163,8 @@ describe("message traces", () => {
     handleMessageUpdated(assistantMessageEvent({
       error: { name: "ApiError", data: { message: "rate limited" } },
     }), ctx)
-    const stepSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "STEP")!
-    const llmSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "LLM")!
+    const stepSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "STEP")!
+    const llmSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "LLM")!
     expect(stepSpan.attributes["gen_ai.react.finish_reason"]).toBe("error")
     expect(stepSpan.status.code).toBe(SpanStatusCode.ERROR)
     expect(llmSpan.status.code).toBe(SpanStatusCode.ERROR)
@@ -173,7 +174,7 @@ describe("message traces", () => {
     const { ctx, spyTracer } = makeCtx("proj_test", [], { tracesEnabled: true })
     handleSessionCreated(sessionCreatedEvent(), ctx)
     handleMessagePartUpdated(toolPartEvent({ status: "running", start: 1500 }), ctx)
-    const toolSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "TOOL")!
+    const toolSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "TOOL")!
     expect(toolSpan.name).toBe("execute_tool bash")
     expect(toolSpan.attributes["gen_ai.operation.name"]).toBe("execute_tool")
     expect(toolSpan.attributes["gen_ai.tool.name"]).toBe("bash")
@@ -188,7 +189,7 @@ describe("message traces", () => {
     ctx.maxContentSize = 5
     handleSessionCreated(sessionCreatedEvent(), ctx)
     handleMessagePartUpdated(toolPartEvent({ status: "running", input: "{\"cmd\":\"very-long-command\"}" }), ctx)
-    const toolSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "TOOL")!
+    const toolSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "TOOL")!
     expect(toolSpan.attributes["gen_ai.tool.call.arguments"]).toBe("{\"cmd\":\"very-long-command\"}")
   })
 
@@ -199,8 +200,8 @@ describe("message traces", () => {
     expect(ctx.activeMessageSpans.size).toBe(0)
     expect(ctx.deferredMessageTextParts.size).toBe(1)
     handleMessagePartUpdated(toolPartEvent({ status: "running", start: 1500 }), ctx)
-    const llmSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "LLM")!
-    const toolSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "TOOL")!
+    const llmSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "LLM")!
+    const toolSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "TOOL")!
     expect(llmSpan.startTime).toBe(1500)
     expect(toolSpan.startTime).toBe(1500)
     handleMessagePartUpdated(toolPartEvent({ status: "completed", start: 1500, end: 1800, output: "ok" }), ctx)
@@ -212,8 +213,8 @@ describe("message traces", () => {
     const { ctx, spyTracer } = makeCtx("proj_test", [], { tracesEnabled: true })
     handleSessionCreated(sessionCreatedEvent(), ctx)
     handleMessagePartUpdated(toolPartEvent({ status: "running", start: 1500 }), ctx)
-    const llmSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "LLM")!
-    const toolSpan = spyTracer!.spans.find(s => s.attributes["gen_ai.span.kind"] === "TOOL")!
+    const llmSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "LLM")!
+    const toolSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "TOOL")!
     expect(llmSpan.startTime).toBe(1500)
     expect(toolSpan.startTime).toBe(1500)
   })
@@ -228,7 +229,7 @@ describe("message traces", () => {
     handleMessageUpdated(assistantMessageEvent({ messageID: "msg_1" }), ctx)
     handleMessagePartUpdated(textPartEvent({ messageID: "msg_2", text: "I fixed it", timeStart: 2500 }), ctx)
     handleMessageUpdated(assistantMessageEvent({ messageID: "msg_2" }), ctx)
-    const llmSpans = spyTracer!.spans.filter(s => s.attributes["gen_ai.span.kind"] === "LLM")
+    const llmSpans = spyTracer!.spans.filter(s => s.attributes[SPAN_KIND_ATTR] === "LLM")
     const input = JSON.parse(llmSpans[1]!.attributes["gen_ai.input.messages"] as string)
     expect(input).toHaveLength(3)
     expect(input[0].role).toBe("user")

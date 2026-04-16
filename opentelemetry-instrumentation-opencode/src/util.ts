@@ -2,6 +2,16 @@ import { trace, context, type Span, type SpanContext, type Tracer, type Attribut
 import { MAX_PENDING } from "./types.ts"
 import type { HandlerContext } from "./types.ts"
 
+// Auto-detect ALIBABA_GROUP semconv dialect:
+//   LOONGSUITE_SEMCONV_DIALECT_NAME=ALIBABA_GROUP  → gen_ai.span_kind_name
+//   endpoint contains "sunfire"                    → gen_ai.span_kind_name
+//   otherwise                                      → gen_ai.span.kind (OTel default)
+const _sunfireDetected = (process.env["OTEL_EXPORTER_OTLP_ENDPOINT"] ?? "").includes("sunfire")
+export const SPAN_KIND_ATTR =
+  process.env["LOONGSUITE_SEMCONV_DIALECT_NAME"] === "ALIBABA_GROUP" || _sunfireDetected
+    ? "gen_ai.span_kind_name"
+    : "gen_ai.span.kind"
+
 /** Returns a human-readable summary string from an opencode error object. */
 export function errorSummary(err: { name: string; data?: unknown } | undefined): string {
   if (!err) return "unknown"
@@ -62,7 +72,7 @@ export function genAiSpanAttrs(
   extra: Record<string, AttributeValue> = {},
 ): Record<string, AttributeValue> {
   return {
-    "gen_ai.span.kind": spanKind,
+    [SPAN_KIND_ATTR]: spanKind,
     "gen_ai.operation.name": operation,
     "gen_ai.session.id": sessionID,
     "gen_ai.conversation.id": sessionID,
