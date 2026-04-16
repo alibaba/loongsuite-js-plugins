@@ -97,6 +97,25 @@ export function loadConfig(): PluginConfig {
 }
 
 /**
+ * Parses a comma-separated `key=value` header string into a plain object.
+ * Returns `undefined` when the input is absent or empty.
+ *
+ * Example: `"x-api-key=abc,x-tenant=prod"` → `{ "x-api-key": "abc", "x-tenant": "prod" }`
+ */
+export function parseOtlpHeaders(raw: string | undefined): Record<string, string> | undefined {
+  if (!raw) return undefined
+  const result: Record<string, string> = {}
+  for (const pair of raw.split(",")) {
+    const idx = pair.indexOf("=")
+    if (idx <= 0) continue
+    const key = pair.slice(0, idx).trim()
+    const val = pair.slice(idx + 1).trim()
+    if (key) result[key] = val
+  }
+  return Object.keys(result).length > 0 ? result : undefined
+}
+
+/**
  * Resolves an opencode log level string to a `Level`.
  * Returns `current` unchanged when the input does not match a known level.
  */

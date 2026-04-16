@@ -49,6 +49,12 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
     return {}
   }
 
+  // Legacy: propagate OPENCODE_OTLP_HEADERS to the standard env var so the
+  // OTel SDK's own header resolution also picks it up (e.g. for auto-instrumentation).
+  if (!process.env["OTEL_EXPORTER_OTLP_HEADERS"] && process.env["OPENCODE_OTLP_HEADERS"]) {
+    process.env["OTEL_EXPORTER_OTLP_HEADERS"] = process.env["OPENCODE_OTLP_HEADERS"]
+  }
+
   await log("info", "starting up", {
     version: PLUGIN_VERSION,
     endpoint: config.endpoint,
@@ -72,6 +78,7 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
     })
   }
 
+  const parsedHeaders = parseOtlpHeaders(config.otlpHeaders)
   const { meterProvider, loggerProvider, tracerProvider } = setupOtel(
     config.endpoint,
     config.metricsInterval,
@@ -79,6 +86,7 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
     PLUGIN_VERSION,
     config.tracesDisabled,
     config.logsDisabled,
+    parsedHeaders,
   )
   await log("info", "OTel SDK initialized", { tracesEnabled: !config.tracesDisabled, logsEnabled: !config.logsDisabled })
 
