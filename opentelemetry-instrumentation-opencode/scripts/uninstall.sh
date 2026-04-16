@@ -108,40 +108,27 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 3. 删除本地 tgz 并从 package.json 移除依赖 / Remove tgz and package.json dep
+# 3. 删除插件入口文件 / Remove plugin entry file
 # ---------------------------------------------------------------------------
-msg "==> 删除本地 tgz 文件和 package.json 依赖..." \
-    "==> Removing local tgz and package.json dependency..."
+msg "==> 删除插件入口文件..." \
+    "==> Removing plugin entry file..."
 
 OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+PLUGIN_ENTRY="$OPENCODE_CONFIG_DIR/plugins/opentelemetry-instrumentation-opencode.ts"
 
-# Remove tgz files matching our package name pattern
-for tgz in "$OPENCODE_CONFIG_DIR"/loongsuite-opentelemetry-instrumentation-opencode-*.tgz; do
-    if [ -f "$tgz" ]; then
-        rm -f "$tgz"
-        msg "    ✅ 已删除 ${tgz}" \
-            "    ✅ Deleted ${tgz}"
-    fi
-done
-
-# Remove entry from ~/.config/opencode/package.json
-OPENCODE_PKG="$OPENCODE_CONFIG_DIR/package.json"
-if [ -f "$OPENCODE_PKG" ] && command -v node &>/dev/null; then
-    node << NODEOF
-const fs = require("fs");
-const path = "$OPENCODE_PKG";
-let pkg;
-try { pkg = JSON.parse(fs.readFileSync(path, "utf-8")); } catch { pkg = {}; }
-if (pkg.dependencies && pkg.dependencies["$PKG_NAME"]) {
-    delete pkg.dependencies["$PKG_NAME"];
-    if (Object.keys(pkg.dependencies).length === 0) delete pkg.dependencies;
-    fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
-    process.stderr.write("    ✅ 已从 package.json 移除依赖\n");
-} else {
-    process.stderr.write("    ℹ️  package.json 中无该依赖，跳过\n");
-}
-NODEOF
+if [ -f "$PLUGIN_ENTRY" ]; then
+    rm -f "$PLUGIN_ENTRY"
+    msg "    ✅ 已删除 ${PLUGIN_ENTRY}" \
+        "    ✅ Deleted ${PLUGIN_ENTRY}"
+else
+    msg "    ℹ️  ${PLUGIN_ENTRY} 不存在，跳过" \
+        "    ℹ️  ${PLUGIN_ENTRY} not found, skipping"
 fi
+
+# Also clean up stale tgz/package.json from previous install method
+for tgz in "$OPENCODE_CONFIG_DIR"/loongsuite-opentelemetry-instrumentation-opencode-*.tgz; do
+    [ -f "$tgz" ] && rm -f "$tgz" && msg "    ✅ 已删除旧 tgz: ${tgz}" "    ✅ Removed stale tgz: ${tgz}" || true
+done
 echo ""
 
 # ---------------------------------------------------------------------------
