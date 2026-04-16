@@ -108,26 +108,39 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 3. 卸载全局 npm 包 / Uninstall global npm package
+# 3. 删除本地 tgz 并从 package.json 移除依赖 / Remove tgz and package.json dep
 # ---------------------------------------------------------------------------
-msg "==> 正在卸载 ${PKG_NAME}..." \
-    "==> Uninstalling ${PKG_NAME}..."
+msg "==> 删除本地 tgz 文件和 package.json 依赖..." \
+    "==> Removing local tgz and package.json dependency..."
 
-if npm list -g "${PKG_NAME}" --depth=0 &>/dev/null 2>&1; then
-    if npm uninstall -g "${PKG_NAME}" --silent 2>/dev/null; then
-        msg "    ✅ npm 包已卸载" \
-            "    ✅ npm package uninstalled"
-    else
-        msg "    ⚠️  npm 卸载失败，请手动执行：npm uninstall -g ${PKG_NAME}" \
-            "    ⚠️  npm uninstall failed. Run manually: npm uninstall -g ${PKG_NAME}"
+OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+
+# Remove tgz files matching our package name pattern
+for tgz in "$OPENCODE_CONFIG_DIR"/loongsuite-opentelemetry-instrumentation-opencode-*.tgz; do
+    if [ -f "$tgz" ]; then
+        rm -f "$tgz"
+        msg "    ✅ 已删除 ${tgz}" \
+            "    ✅ Deleted ${tgz}"
     fi
-elif command -v bun &>/dev/null && bun pm ls -g 2>/dev/null | grep -q "${PKG_NAME}"; then
-    bun remove -g "${PKG_NAME}" 2>/dev/null && \
-        msg "    ✅ bun 包已卸载" \
-            "    ✅ bun package uninstalled"
-else
-    msg "    ℹ️  未检测到全局安装的 ${PKG_NAME}，跳过" \
-        "    ℹ️  ${PKG_NAME} not found globally, skipping"
+done
+
+# Remove entry from ~/.config/opencode/package.json
+OPENCODE_PKG="$OPENCODE_CONFIG_DIR/package.json"
+if [ -f "$OPENCODE_PKG" ] && command -v node &>/dev/null; then
+    node << NODEOF
+const fs = require("fs");
+const path = "$OPENCODE_PKG";
+let pkg;
+try { pkg = JSON.parse(fs.readFileSync(path, "utf-8")); } catch { pkg = {}; }
+if (pkg.dependencies && pkg.dependencies["$PKG_NAME"]) {
+    delete pkg.dependencies["$PKG_NAME"];
+    if (Object.keys(pkg.dependencies).length === 0) delete pkg.dependencies;
+    fs.writeFileSync(path, JSON.stringify(pkg, null, 2) + "\n", "utf-8");
+    process.stderr.write("    ✅ 已从 package.json 移除依赖\n");
+} else {
+    process.stderr.write("    ℹ️  package.json 中无该依赖，跳过\n");
+}
+NODEOF
 fi
 echo ""
 
