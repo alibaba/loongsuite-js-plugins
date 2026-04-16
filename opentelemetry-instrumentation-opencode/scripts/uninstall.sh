@@ -132,7 +132,24 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
-# 3. 完成 / Done
+# 4. 删除 JSON 配置文件 / Remove JSON config file
+# ---------------------------------------------------------------------------
+msg "==> 删除 JSON 配置文件..." \
+    "==> Removing JSON config file..."
+
+OTel_CONFIG_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/otel-plugin.json"
+if [ -f "$OTel_CONFIG_FILE" ]; then
+    rm -f "$OTel_CONFIG_FILE"
+    msg "    ✅ 已删除 ${OTel_CONFIG_FILE}" \
+        "    ✅ Deleted ${OTel_CONFIG_FILE}"
+else
+    msg "    ℹ️  ${OTel_CONFIG_FILE} 不存在，跳过" \
+        "    ℹ️  ${OTel_CONFIG_FILE} not found, skipping"
+fi
+echo ""
+
+# ---------------------------------------------------------------------------
+# 5. 完成 / Done
 # ---------------------------------------------------------------------------
 msg "================================================" \
     "================================================"
