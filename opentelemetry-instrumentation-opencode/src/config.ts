@@ -1,35 +1,9 @@
-import * as fs from "node:fs"
-import * as path from "node:path"
-import * as os from "node:os"
 import { LEVELS, type Level } from "./types.ts"
-
-/**
- * Optional config file at ~/.config/opencode/otel-plugin.json
- * Useful when env vars are not inherited by opencode's plugin worker.
- */
-type FileConfig = {
-  endpoint?: string
-  serviceName?: string
-  headers?: string
-  semconvDialect?: string
-}
-
-function loadFileConfig(): FileConfig {
-  try {
-    const configHome = process.env["XDG_CONFIG_HOME"] ?? path.join(os.homedir(), ".config")
-    const filePath = path.join(configHome, "opencode", "otel-plugin.json")
-    if (!fs.existsSync(filePath)) return {}
-    return JSON.parse(fs.readFileSync(filePath, "utf-8")) as FileConfig
-  } catch {
-    return {}
-  }
-}
 
 /** Configuration values resolved from OTEL env vars (OPENCODE_* kept as fallback). */
 export type PluginConfig = {
   enabled: boolean
   endpoint: string
-  serviceName: string | undefined
   metricsInterval: number
   logsInterval: number
   metricPrefix: string
@@ -74,25 +48,15 @@ function parseEnvIntFromKeys(keys: string[], fallback: number): number {
  * Reads OTEL environment variables first, then falls back to legacy `OPENCODE_*`.
  */
 export function loadConfig(): PluginConfig {
-  // Read optional file config — reliable even when env vars aren't inherited by opencode
-  const file = loadFileConfig()
-
   const endpoint = firstEnv([
     "OTEL_EXPORTER_OTLP_ENDPOINT",
     "OPENCODE_OTLP_ENDPOINT",
-  ]) ?? file.endpoint ?? "http://localhost:4318"
+  ]) ?? "http://localhost:4318"
 
   const otlpHeaders = firstEnv([
     "OTEL_EXPORTER_OTLP_HEADERS",
     "OPENCODE_OTLP_HEADERS",
-  ]) ?? file.headers
-
-  // semconvDialect from file (env LOONGSUITE_SEMCONV_DIALECT_NAME takes priority)
-  if (!process.env["LOONGSUITE_SEMCONV_DIALECT_NAME"] && file.semconvDialect) {
-    process.env["LOONGSUITE_SEMCONV_DIALECT_NAME"] = file.semconvDialect
-  }
-
-  const serviceName = firstEnv(["OTEL_SERVICE_NAME"]) ?? file.serviceName
+  ])
 
   const resourceAttributes = firstEnv([
     "OTEL_RESOURCE_ATTRIBUTES",
@@ -112,7 +76,6 @@ export function loadConfig(): PluginConfig {
   const tracesDisabled = process.env["OTEL_TRACES_EXPORTER"] === "none"
     || !!process.env["OPENCODE_DISABLE_TRACES"]
   const enabled = !!process.env["OPENCODE_ENABLE_TELEMETRY"]
-    || !!file.endpoint
     || !!firstEnv([
       "OTEL_EXPORTER_OTLP_ENDPOINT",
       "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
@@ -123,7 +86,6 @@ export function loadConfig(): PluginConfig {
   return {
     enabled,
     endpoint,
-    serviceName,
     metricsInterval: parseEnvIntFromKeys(["OTEL_METRIC_EXPORT_INTERVAL", "OPENCODE_OTLP_METRICS_INTERVAL"], 60000),
     logsInterval: parseEnvIntFromKeys(["OTEL_BLRP_SCHEDULE_DELAY", "OPENCODE_OTLP_LOGS_INTERVAL"], 5000),
     metricPrefix: firstEnv(["OTEL_METRIC_PREFIX", "OPENCODE_METRIC_PREFIX"]) ?? "opencode.",
@@ -139,8 +101,6 @@ export function loadConfig(): PluginConfig {
 /**
  * Parses a comma-separated `key=value` header string into a plain object.
  * Returns `undefined` when the input is absent or empty.
- *
- * Example: `"x-api-key=abc,x-tenant=prod"` → `{ "x-api-key": "abc", "x-tenant": "prod" }`
  */
 export function parseOtlpHeaders(raw: string | undefined): Record<string, string> | undefined {
   if (!raw) return undefined

@@ -29,7 +29,6 @@ MARKER_END="# END opentelemetry-instrumentation-opencode"
 OPENCODE_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
 PLUGINS_DIR="$OPENCODE_CONFIG_DIR/plugins"
 PLUGIN_ENTRY="$PLUGINS_DIR/$PLUGIN_ENTRY_NAME"
-OTel_CONFIG_FILE="$OPENCODE_CONFIG_DIR/otel-plugin.json"
 
 # ---------------------------------------------------------------------------
 # 参数解析 / Argument parsing
@@ -215,37 +214,7 @@ if [ -n "$ENDPOINT" ] && echo "$ENDPOINT" | grep -qi "sunfire"; then
 fi
 
 # ---------------------------------------------------------------------------
-# 6. 写 JSON 配置文件 / Write JSON config file
-# ---------------------------------------------------------------------------
-msg "==> 写入 JSON 配置文件 (otel-plugin.json)..." \
-    "==> Writing JSON config file (otel-plugin.json)..."
-
-_json_fields=""
-_json_sep=""
-if [ -n "$ENDPOINT" ]; then
-    _json_fields="${_json_fields}${_json_sep}  \"endpoint\": \"${ENDPOINT}\""
-    _json_sep=$',\n'
-fi
-if [ -n "$SERVICE_NAME" ]; then
-    _json_fields="${_json_fields}${_json_sep}  \"serviceName\": \"${SERVICE_NAME}\""
-    _json_sep=$',\n'
-fi
-if [ -n "$HEADERS" ]; then
-    _json_fields="${_json_fields}${_json_sep}  \"headers\": \"${HEADERS}\""
-    _json_sep=$',\n'
-fi
-if [ -n "${LOONGSUITE_SEMCONV_DIALECT_NAME:-}" ]; then
-    _json_fields="${_json_fields}${_json_sep}  \"semconvDialect\": \"${LOONGSUITE_SEMCONV_DIALECT_NAME}\""
-    _json_sep=$',\n'
-fi
-
-printf '{\n%s\n}\n' "$_json_fields" > "$OTel_CONFIG_FILE"
-msg "    ✅ 已写入 ${OTel_CONFIG_FILE}" \
-    "    ✅ Written to ${OTel_CONFIG_FILE}"
-echo ""
-
-# ---------------------------------------------------------------------------
-# 7. 写 env 块到 shell profile / Write env block to shell profiles
+# 6. 写 env 块到 shell profile / Write env block to shell profiles
 # ---------------------------------------------------------------------------
 msg "==> 写入环境变量到 shell 配置文件..." \
     "==> Writing environment variables to shell profiles..."
@@ -292,7 +261,7 @@ write_env_to_profile "$HOME/.zshenv"       || true
 echo ""
 
 # ---------------------------------------------------------------------------
-# 8. 完成 / Done
+# 7. 完成 / Done
 # ---------------------------------------------------------------------------
 msg "================================================" \
     "================================================"
