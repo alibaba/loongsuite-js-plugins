@@ -46,28 +46,21 @@ function getOrCreateLLMSpan(
   if (!invocation) return null
   const stepRound = invocation.nextStepRound
   invocation.nextStepRound += 1
-  const stepSpan = startChildSpan(
-    ctx.tracer,
-    genAiSpanName("react", "step"),
-    genAiSpanAttrs("STEP", "react", sessionID, ctx.commonAttrs, {
-      "gen_ai.react.round": stepRound,
-    }),
-    invocation.agentContext,
-    startTime,
-  )
   const span = startChildSpan(
     ctx.tracer,
     genAiSpanName("chat"),
-    genAiSpanAttrs("LLM", "chat", sessionID, ctx.commonAttrs),
-    stepSpan.spanContext(),
+    genAiSpanAttrs("LLM", "chat", sessionID, ctx.commonAttrs, {
+      "gen_ai.react.round": stepRound,
+      "gen_ai.loop.id": invocation.invocationID,
+      "gen_ai.loop.iteration": stepRound,
+    }),
+    invocation.agentContext,
     startTime,
   )
 
   const active: ActiveMessageSpan = {
     span,
     context: span.spanContext(),
-    stepSpan,
-    stepContext: stepSpan.spanContext(),
     stepRound,
     invocationID: invocation.invocationID,
     sessionID,
@@ -294,16 +287,13 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
     appendToSessionHistory(sessionID, active, ctx)
 
     if (hasError) {
+      span.setAttribute("gen_ai.react.finish_reason", "error")
       span.setStatus({ code: SpanStatusCode.ERROR, message: errorSummary(assistant.error) })
-      active.stepSpan.setAttribute("gen_ai.react.finish_reason", "error")
-      active.stepSpan.setStatus({ code: SpanStatusCode.ERROR, message: errorSummary(assistant.error) })
     } else {
+      span.setAttribute("gen_ai.react.finish_reason", "success")
       span.setStatus({ code: SpanStatusCode.OK })
-      active.stepSpan.setAttribute("gen_ai.react.finish_reason", "success")
-      active.stepSpan.setStatus({ code: SpanStatusCode.OK })
     }
     span.end(assistant.time.completed)
-    active.stepSpan.end(assistant.time.completed)
     ctx.activeMessageSpans.delete(msgKey)
 
     const invocation = ctx.activeInvocations.get(sessionID)
@@ -422,7 +412,7 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
     })
     if (isTraceEnabled(ctx) && ctx.tracer) {
       const llmSpan = getOrCreateLLMSpan(toolPart.sessionID, toolPart.messageID, ctx, toolPart.state.time.start)
-      const parentCtx = llmSpan?.stepContext
+      const parentCtx = llmSpan?.context
         ?? ctx.activeInvocations.get(toolPart.sessionID)?.agentContext
       const rawInput = typeof toolPart.state.input === "string"
         ? toolPart.state.input
@@ -434,6 +424,9 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
           "gen_ai.tool.name": toolPart.tool,
           "gen_ai.tool.call.id": toolPart.callID,
           "gen_ai.tool.call.arguments": rawInput,
+          "gen_ai.react.round": llmSpan?.stepRound ?? 0,
+          "gen_ai.loop.id": ctx.activeInvocations.get(toolPart.sessionID)?.invocationID ?? "",
+          "gen_ai.loop.iteration": llmSpan?.stepRound ?? 0,
         }),
         parentCtx,
         toolPart.state.time.start,
