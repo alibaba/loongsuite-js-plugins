@@ -78,8 +78,6 @@ export type ToolResultInfo = {
 export type ActiveMessageSpan = {
   span: Span
   context: SpanContext
-  stepSpan: Span
-  stepContext: SpanContext
   stepRound: number
   invocationID: string
   sessionID: string

@@ -46,13 +46,10 @@ function sweepSession(sessionID: string, ctx: HandlerContext, error?: boolean, e
     if (active.sessionID === sessionID) {
       if (error) {
         active.span.setStatus({ code: SpanStatusCode.ERROR, message: "session ended" })
-        active.stepSpan.setStatus({ code: SpanStatusCode.ERROR, message: "session ended" })
       } else {
         active.span.setStatus({ code: SpanStatusCode.OK })
-        active.stepSpan.setStatus({ code: SpanStatusCode.OK })
       }
       active.span.end()
-      active.stepSpan.end()
       ctx.activeMessageSpans.delete(key)
     }
   }

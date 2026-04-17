@@ -144,11 +144,10 @@ describe("message traces", () => {
     handleSessionCreated(sessionCreatedEvent(), ctx)
     handleMessagePartUpdated(textPartEvent({ text: "Hello", timeStart: 900 }), ctx)
     expect(ctx.activeMessageSpans.size).toBe(1)
-    expect(spyTracer!.spans).toHaveLength(4)
+    expect(spyTracer!.spans).toHaveLength(3) // ENTRY + AGENT + LLM (no STEP)
     expect(spyTracer!.spans[0]!.attributes[SPAN_KIND_ATTR]).toBe("ENTRY")
     expect(spyTracer!.spans[1]!.attributes[SPAN_KIND_ATTR]).toBe("AGENT")
-    expect(spyTracer!.spans[2]!.attributes[SPAN_KIND_ATTR]).toBe("STEP")
-    const llmSpan = spyTracer!.spans[3]!
+    const llmSpan = spyTracer!.spans[2]!
     expect(llmSpan.attributes[SPAN_KIND_ATTR]).toBe("LLM")
     handleMessageUpdated(assistantMessageEvent(), ctx)
     expect(llmSpan.name).toBe("chat claude-sonnet-4-20250514")
@@ -163,10 +162,9 @@ describe("message traces", () => {
     handleMessageUpdated(assistantMessageEvent({
       error: { name: "ApiError", data: { message: "rate limited" } },
     }), ctx)
-    const stepSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "STEP")!
+    // stepSpan removed — finish_reason is now on the LLM span
     const llmSpan = spyTracer!.spans.find(s => s.attributes[SPAN_KIND_ATTR] === "LLM")!
-    expect(stepSpan.attributes["gen_ai.react.finish_reason"]).toBe("error")
-    expect(stepSpan.status.code).toBe(SpanStatusCode.ERROR)
+    expect(llmSpan.attributes["gen_ai.react.finish_reason"]).toBe("error")
     expect(llmSpan.status.code).toBe(SpanStatusCode.ERROR)
   })
 
