@@ -1,0 +1,62 @@
+{
+  "name": "@loongsuite/opentelemetry-util-genai",
+  "version": "0.1.0",
+  "description": "OpenTelemetry GenAI utility for standardized telemetry collection across LLM, Agent, Embedding, Tool, Retrieval, Rerank, Memory and more",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alibaba/loongsuite-js-plugins.git",
+    "directory": "opentelemetry-util-genai"
+  },
+  "homepage": "https://github.com/alibaba/loongsuite-js-plugins/tree/main/opentelemetry-util-genai#readme",
+  "bugs": {
+    "url": "https://github.com/alibaba/loongsuite-js-plugins/issues"
+  },
+  "keywords": [
+    "opentelemetry",
+    "otel",
+    "genai",
+    "llm",
+    "agent",
+    "observability",
+    "tracing",
+    "instrumentation",
+    "loongsuite"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run build",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@opentelemetry/semantic-conventions": "^1.40.0"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^4.1.3",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.3"
+  }
+}

@@ -54,3 +54,30 @@ jobs:
       - name: Build
         working-directory: opentelemetry-instrumentation-openclaw
         run: npm run build
+
+  build-and-test-util-genai:
+    name: Build & Test opentelemetry-util-genai
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: opentelemetry-util-genai/package-lock.json
+      - name: Install dependencies
+        working-directory: opentelemetry-util-genai
+        run: npm ci
+      - name: Security audit
+        working-directory: opentelemetry-util-genai
+        run: npm audit --audit-level=high --registry=https://registry.npmjs.org
+      - name: Build
+        working-directory: opentelemetry-util-genai
+        run: npm run build
+      - name: Run tests
+        working-directory: opentelemetry-util-genai
+        run: npm test
