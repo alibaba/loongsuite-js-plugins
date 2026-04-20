@@ -73,11 +73,16 @@ export class ArmsExporter {
   }
 
   private async initialize(): Promise<void> {
-    const instanceName =
-      this.config.serviceName || basename(process.cwd()) || "openclaw-agent";
+    // OPENCLAW_IDENTITY env var takes precedence over --serviceName config
+    const resolvedServiceName =
+      process.env.OPENCLAW_IDENTITY ||
+      this.config.serviceName ||
+      basename(process.cwd()) ||
+      "openclaw-agent";
+    const instanceName = resolvedServiceName;
     const instanceId = `${instanceName}@${hostname()}:${process.pid}`;
     const resource = resourceFromAttributes({
-      [ATTR_SERVICE_NAME]: this.config.serviceName,
+      [ATTR_SERVICE_NAME]: resolvedServiceName,
       "service.instance.id": instanceId,
       "host.name": hostname(),
       "telemetry.sdk.language": "nodejs",
@@ -108,7 +113,7 @@ export class ArmsExporter {
     this.tracer = this.provider.getTracer("opentelemetry-instrumentation-openclaw", PLUGIN_VERSION);
     this.initialized = true;
     this.api.logger.info(
-      `[ArmsTrace] Exporter initialized (service=${this.config.serviceName})`,
+      `[ArmsTrace] Exporter initialized (service=${resolvedServiceName})`,
     );
   }
 
