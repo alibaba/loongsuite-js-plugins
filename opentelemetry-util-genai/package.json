@@ -44,7 +44,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
     "@opentelemetry/semantic-conventions": "^1.40.0"
