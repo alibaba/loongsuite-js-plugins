@@ -216,6 +216,7 @@ if [ -n "$ENDPOINT" ]; then
     # Build the env block content
     ENV_LINES="export OTEL_EXPORTER_OTLP_ENDPOINT=\"${ENDPOINT}\""
     if [ -n "$SERVICE_NAME" ]; then
+        ENV_LINES="${ENV_LINES}"$'\n'"# claude_identity env var (if set) overrides this at runtime via the claude alias"
         ENV_LINES="${ENV_LINES}"$'\n'"export OTEL_SERVICE_NAME=\"${SERVICE_NAME}\""
     fi
     if [ -n "$HEADERS" ]; then

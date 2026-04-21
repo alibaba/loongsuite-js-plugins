@@ -40,6 +40,16 @@ describe("telemetry", () => {
     delete process.env.CLAUDE_TELEMETRY_DEBUG;
   });
 
+  test("resolveServiceName uses claude_identity env var with top priority", () => {
+    process.env.claude_identity = "my-claude-identity";
+    process.env.OTEL_SERVICE_NAME = "should-be-ignored";
+    telemetry = require("../src/telemetry");
+    expect(telemetry.resolveServiceName()).toBe("my-claude-identity");
+    expect(telemetry.resolveServiceName("explicit-arg")).toBe("my-claude-identity");
+    delete process.env.claude_identity;
+    delete process.env.OTEL_SERVICE_NAME;
+  });
+
   test("resolveServiceName uses OTEL_SERVICE_NAME env var", () => {
     process.env.OTEL_SERVICE_NAME = "my-service";
     telemetry = require("../src/telemetry");
