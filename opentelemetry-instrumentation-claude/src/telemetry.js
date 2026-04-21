@@ -12,10 +12,9 @@
  *   3. Neither                             → throw RuntimeError
  *
  * Service name priority (highest first):
- *   1. claude_identity env var (overrides everything, including --serviceName)
- *   2. OTEL_SERVICE_NAME env var
- *   3. service.name inside OTEL_RESOURCE_ATTRIBUTES
- *   4. defaultServiceName argument (fallback: "claude-agents")
+ *   1. OTEL_SERVICE_NAME env var
+ *   2. service.name inside OTEL_RESOURCE_ATTRIBUTES
+ *   3. defaultServiceName argument (fallback: "claude-agents")
  */
 
 const { NodeTracerProvider } = require("@opentelemetry/sdk-trace-node");
@@ -35,10 +34,6 @@ let _tracerProvider = null;
  * @returns {string}
  */
 function resolveServiceName(defaultName = "claude-agents") {
-  // claude_identity takes top priority — overrides everything including --serviceName
-  const identity = (process.env.claude_identity || "").trim();
-  if (identity) return identity;
-
   const envName = (process.env.OTEL_SERVICE_NAME || "").trim();
   if (envName) return envName;
 
