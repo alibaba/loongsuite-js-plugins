@@ -22,7 +22,7 @@ ENDPOINT=""
 LICENSE_KEY=""
 ARMS_PROJECT=""
 CMS_WORKSPACE=""
-SERVICE_NAME=""
+SERVICE_NAME="${openclaw_identity:-}"
 PLUGIN_URL="${DEFAULT_PLUGIN_URL}"
 INSTALL_DIR=""
 ENABLE_METRICS=true
@@ -53,7 +53,7 @@ while [[ $# -gt 0 ]]; do
     --x-arms-license-key) need_value "$@"; LICENSE_KEY="$2";    shift 2 ;;
     --x-arms-project)     need_value "$@"; ARMS_PROJECT="$2";   shift 2 ;;
     --x-cms-workspace)    need_value "$@"; CMS_WORKSPACE="$2";  shift 2 ;;
-    --serviceName)        need_value "$@"; SERVICE_NAME="$2";   shift 2 ;;
+    --serviceName)        need_value "$@"; [[ -z "${openclaw_identity:-}" ]] && SERVICE_NAME="$2"; shift 2 ;;
     --plugin-url)         need_value "$@"; PLUGIN_URL="$2";     shift 2 ;;
     --install-dir)        need_value "$@"; INSTALL_DIR="$2";    shift 2 ;;
     --disable-metrics)    ENABLE_METRICS=false; shift ;;
@@ -74,8 +74,8 @@ fi
 
 # ── Validate required parameters ──
 MISSING=()
-[[ -z "$ENDPOINT" ]]      && MISSING+=("--endpoint")
-[[ -z "$SERVICE_NAME" ]]   && MISSING+=("--serviceName")
+[[ -z "$ENDPOINT" ]]    && MISSING+=("--endpoint")
+[[ -z "$SERVICE_NAME" ]] && MISSING+=("--serviceName (or set openclaw_identity env var)")
 
 if [[ ${#MISSING[@]} -gt 0 ]]; then
   error "Missing required parameters: ${MISSING[*]}"
@@ -84,6 +84,10 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
   echo "  curl -fsSL https://<host>/install.sh | bash -s -- \\"
   echo "    --endpoint \"https://...\" \\"
   echo "    --serviceName \"my-service\""
+  echo ""
+  echo "Or set openclaw_identity env var to skip --serviceName:"
+  echo "  export openclaw_identity=\"my-service\""
+  echo "  curl -fsSL https://<host>/install.sh | bash -s -- --endpoint \"https://...\""
   echo ""
   echo "Optional:"
   echo "    --x-arms-license-key \"xxx\" \\"
@@ -94,6 +98,9 @@ fi
 
 # ── Check prerequisites ──
 info "Checking prerequisites..."
+if [[ -n "${openclaw_identity:-}" ]]; then
+  info "openclaw_identity is set — using '${openclaw_identity}' as service.name (--serviceName ignored)"
+fi
 
 if ! command -v node &>/dev/null; then
   error "Node.js is not installed. Please install Node.js >= 18 first."
