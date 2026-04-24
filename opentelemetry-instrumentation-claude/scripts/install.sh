@@ -65,7 +65,33 @@ echo ""
 msg "==> 正在安装 Node.js 依赖..." \
     "==> Installing Node.js dependencies..."
 cd "$PKG_DIR"
-npm install --silent
+if ! npm install --silent 2>/tmp/npm-install-err.log; then
+    echo ""
+    if grep -qi "EACCES\|permission denied" /tmp/npm-install-err.log 2>/dev/null; then
+        msg "    ❌ 依赖安装失败：Node.js 目录权限不足" \
+            "    ❌ Dependency install failed: Node.js directory permission denied"
+        echo ""
+        msg "    💡 修复方案（三选一）：" \
+            "    💡 Fix options (choose one):"
+        msg "       1. 使用 nvm 管理 Node（推荐）：" \
+            "       1. Use nvm to manage Node (recommended):"
+        echo "          curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
+        echo "          nvm install --lts && nvm use --lts"
+        msg "       2. 修复 npm 缓存目录权限：" \
+            "       2. Fix npm cache directory permissions:"
+        echo "          sudo chown -R \$(whoami) \$(npm config get prefix)/{lib/node_modules,bin,share}"
+        msg "       3. 配置 npm 使用用户目录（无需 sudo）：" \
+            "       3. Configure npm to use user directory (no sudo needed):"
+        echo "          npm config set prefix '\$HOME/.local'"
+        echo "          export PATH=\"\$HOME/.local/bin:\$PATH\""
+    else
+        msg "    ❌ 依赖安装失败，详细错误：" \
+            "    ❌ Dependency install failed. Details:"
+        cat /tmp/npm-install-err.log
+    fi
+    echo ""
+    exit 1
+fi
 msg "    ✅ 依赖安装完成" \
     "    ✅ Dependencies installed"
 echo ""
@@ -82,6 +108,8 @@ elif npm link --silent 2>/dev/null; then
 else
     msg "    ⚠️  全局安装失败，尝试本地 wrapper 方案..." \
         "    ⚠️  Global install failed; trying local wrapper fallback..."
+    msg "       （通常是 npm 全局目录权限不足，可用 nvm 或配置 npm prefix 解决）" \
+        "       (Usually caused by npm global dir permission issues — use nvm or set npm prefix)"
     LOCAL_BIN="$HOME/.local/bin"
     mkdir -p "$LOCAL_BIN"
     cat > "$LOCAL_BIN/otel-claude-hook" << WRAPPER
@@ -136,7 +164,7 @@ echo ""
 msg "   # 任意 OTEL 兼容后端（Sunfire、Jaeger 等）：" \
     "   # Any OTEL-compatible backend (Sunfire, Jaeger, etc.):"
 echo "   export OTEL_EXPORTER_OTLP_ENDPOINT='https://your-otlp-endpoint:4318'"
-echo "   export OTEL_RESOURCE_ATTRIBUTES='service.name=my-claude-agent'"
+echo "   export OTEL_SERVICE_NAME='my-claude-agent'"
 echo ""
 msg "   export OTEL_METRICS_EXPORTER=otlp" \
     "   export OTEL_METRICS_EXPORTER=otlp"

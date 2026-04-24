@@ -302,10 +302,11 @@ describe("replayEventsAsSpans", () => {
     expect(mockSpan.end).toHaveBeenCalled();
   });
 
-  test("immediately ends tool span when tool_use_id is null", () => {
+  test("pre_tool_use for non-Agent tool creates no span (deferred to post_tool_use)", () => {
+    // Non-Agent tools: span created at post_tool_use time; pre is skipped
     const events = [{ type: "pre_tool_use", timestamp: 1000, tool_name: "Read", tool_input: {}, tool_use_id: null }];
     cli._replayEventsAsSpans(mockTracer, events, mockCtx, 1001);
-    expect(mockSpan.end).toHaveBeenCalled();
+    expect(mockTracer.startSpan).not.toHaveBeenCalled();
   });
 
   test("creates notification span", () => {
@@ -345,9 +346,12 @@ describe("replayEventsAsSpans", () => {
     expect(attrs["gen_ai.usage.output_tokens"]).toBe(50);
   });
 
-  test("creates subagent_start span", () => {
-    const events = [{ type: "subagent_start", timestamp: 1000, subagent_session_id: "sub-123" }];
+  test("subagent_start defers span creation to post_tool_use; creates span at stopTime if no post", () => {
+    // New design: subagent_start stores data only; span created at post_tool_use time
+    // With agent_id set and no matching post, span is created at end-of-function cleanup
+    const events = [{ type: "subagent_start", timestamp: 1000, subagent_session_id: "sub-123", agent_id: "ag-1", agent_type: "MyAgent" }];
     cli._replayEventsAsSpans(mockTracer, events, mockCtx, 1001);
+    // Span is created in end-of-function cleanup for unmatched subagents
     expect(mockTracer.startSpan).toHaveBeenCalledWith(
       expect.stringContaining("Subagent"), expect.any(Object), expect.anything()
     );
@@ -491,21 +495,6 @@ describe("replayEventsAsSpans — extended", () => {
     require("@opentelemetry/api").trace.setSpan = jest.fn().mockReturnValue({});
   });
 
-  test("subagent_stop without child state creates simple span", () => {
-    const events = [{
-      type: "subagent_stop", timestamp: 1001,
-      subagent_session_id: "sub-99", stop_reason: "end_turn",
-      input_tokens: 20, output_tokens: 10,
-      cache_read_input_tokens: 2, cache_creation_input_tokens: 0,
-    }];
-    cli._replayEventsAsSpans(mockTracer, events, mockCtx, 1002);
-    const call = mockTracer.startSpan.mock.calls[0];
-    expect(call[0]).toContain("Subagent completed");
-    const attrs = call[1].attributes;
-    expect(attrs["gen_ai.usage.input_tokens"]).toBe(20);
-    expect(attrs["subagent.stop_reason"]).toBe("end_turn");
-  });
-
   test("subagent_stop with child_state recurses into child events", () => {
     const events = [{
       type: "subagent_stop", timestamp: 1001,
@@ -568,16 +557,25 @@ describe("replayEventsAsSpans — extended", () => {
     );
   });
 
-  test("orphaned tool spans (no post_tool_use) are closed at stopTime", () => {
+  test("orphaned non-Agent pre_tool_use (no post) creates no span", () => {
+    // Non-Agent tools: no span is created without a matching post_tool_use
     const events = [
       { type: "pre_tool_use", timestamp: 1000, tool_name: "Write", tool_input: {}, tool_use_id: "orphan-1" },
     ];
     cli._replayEventsAsSpans(mockTracer, events, mockCtx, 2000);
-    // span.end called with the stop time HrTime
+    expect(mockTracer.startSpan).not.toHaveBeenCalled();
+  });
+
+  test("Agent pre_tool_use creates span immediately and is closed at stopTime if no post", () => {
+    const events = [
+      { type: "pre_tool_use", timestamp: 1000, tool_name: "Agent", tool_input: {}, tool_use_id: "agent-1" },
+    ];
+    cli._replayEventsAsSpans(mockTracer, events, mockCtx, 2000);
+    expect(mockTracer.startSpan).toHaveBeenCalled();
     expect(mockSpan.end).toHaveBeenCalled();
     const endArg = mockSpan.end.mock.calls[0][0];
     expect(Array.isArray(endArg)).toBe(true);
-    expect(endArg[0]).toBe(2000); // seconds component = stopTime
+    expect(endArg[0]).toBe(2000); // closed at stopTime
   });
 
   test("notification with empty message uses generic title", () => {

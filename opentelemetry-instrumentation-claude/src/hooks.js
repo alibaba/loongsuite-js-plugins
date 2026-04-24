@@ -168,7 +168,19 @@ function addResponseToEventData(eventData, toolResponse) {
       const summaryParts = [];
       for (const key of ["result", "content", "message", "output", "stdout"]) {
         if (key in toolResponse) {
-          const val = String(toolResponse[key]);
+          const raw = toolResponse[key];
+          let val;
+          if (Array.isArray(raw)) {
+            // Extract text from content blocks [{type:"text",text:"..."}]
+            const texts = raw
+              .filter(item => item && typeof item === "object" && item.type === "text" && item.text)
+              .map(item => item.text);
+            val = texts.length > 0 ? texts.join("") : JSON.stringify(raw);
+          } else if (raw !== null && typeof raw === "object") {
+            val = JSON.stringify(raw);
+          } else {
+            val = String(raw);
+          }
           summaryParts.push(
             val.length < MAX_CONTENT_LENGTH ? `${key}=${val}` : `${key}=...(${val.length} chars)`
           );
@@ -183,7 +195,17 @@ function addResponseToEventData(eventData, toolResponse) {
     }
 
     for (const [key, value] of Object.entries(toolResponse)) {
-      const strVal = String(value);
+      let strVal;
+      if (Array.isArray(value)) {
+        const texts = value
+          .filter(item => item && typeof item === "object" && item.type === "text" && item.text)
+          .map(item => item.text);
+        strVal = texts.length > 0 ? texts.join("") : JSON.stringify(value);
+      } else if (value !== null && typeof value === "object") {
+        strVal = JSON.stringify(value);
+      } else {
+        strVal = String(value);
+      }
       if (strVal.length < MAX_CONTENT_LENGTH) {
         eventData[`response.${key}`] = strVal;
       } else {

@@ -216,6 +216,7 @@ if [ -n "$ENDPOINT" ]; then
     # Build the env block content
     ENV_LINES="export OTEL_EXPORTER_OTLP_ENDPOINT=\"${ENDPOINT}\""
     if [ -n "$SERVICE_NAME" ]; then
+        ENV_LINES="${ENV_LINES}"$'\n'"# claude_identity env var (if set) overrides this at runtime via the claude alias"
         ENV_LINES="${ENV_LINES}"$'\n'"export OTEL_SERVICE_NAME=\"${SERVICE_NAME}\""
     fi
     if [ -n "$HEADERS" ]; then
@@ -230,7 +231,7 @@ if [ -n "$ENDPOINT" ]; then
 
     write_env_block() {
         local file="$1"
-        [ -f "$file" ] || return
+        [ -f "$file" ] || return 0
         # Remove existing block if present
         if grep -q "# BEGIN otel-claude-hook-env" "$file" 2>/dev/null; then
             local tmp_clean
@@ -247,9 +248,9 @@ ENVBLOCK
         msg "    ✅ 已写入 $file" "    ✅ Written to $file"
     }
 
-    write_env_block "$HOME/.bashrc"
-    write_env_block "$HOME/.zshrc"
-    write_env_block "$HOME/.bash_profile"
+    write_env_block "$HOME/.bashrc"       || true
+    write_env_block "$HOME/.zshrc"        || true
+    write_env_block "$HOME/.bash_profile" || true
 fi
 
 # ============================================================

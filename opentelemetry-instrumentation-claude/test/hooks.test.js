@@ -129,4 +129,29 @@ describe("addResponseToEventData", () => {
     addResponseToEventData(strData, "text");
     expect(strData.response_type).toBe("string");
   });
+
+  test("extracts text from content block arrays in object response", () => {
+    const data = {};
+    addResponseToEventData(data, {
+      content: [
+        { type: "text", text: "Hello" },
+        { type: "text", text: " world" },
+      ],
+      result: [{ type: "tool_use", id: "t1", name: "bash" }],
+    });
+    expect(data.status).toBe("success");
+    // content field: text blocks joined
+    expect(data["gen_ai.tool.call.result"]).toContain("Hello world");
+    // result field: non-text array → JSON
+    expect(data["response.result"]).toContain("tool_use");
+  });
+
+  test("serializes nested objects in response fields as JSON", () => {
+    const data = {};
+    addResponseToEventData(data, {
+      meta: { nested: { key: "value" } },
+    });
+    expect(data["response.meta"]).toContain("nested");
+    expect(data["response.meta"]).not.toBe("[object Object]");
+  });
 });
