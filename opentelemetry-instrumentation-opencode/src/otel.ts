@@ -22,6 +22,7 @@ export function buildResource(version: string) {
     "app.version": version,
     "os.type": process.platform,
     [ATTR_HOST_ARCH]: process.arch,
+    "acs.arms.service.feature": "genai_app",
   }
   const raw = process.env["OTEL_RESOURCE_ATTRIBUTES"]
   if (raw) {
@@ -60,11 +61,15 @@ export function setupOtel(
 ): OtelProviders {
   const resource = buildResource(version)
 
+  const tracesUrl = process.env["OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"] || endpoint + "/v1/traces"
+  const metricsUrl = process.env["OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"] || endpoint + "/v1/metrics"
+  const logsUrl = process.env["OTEL_EXPORTER_OTLP_LOGS_ENDPOINT"] || endpoint + "/v1/logs"
+
   const meterProvider = new MeterProvider({
     resource,
     readers: [
       new PeriodicExportingMetricReader({
-        exporter: new OTLPMetricExporter({ url: endpoint + "/v1/metrics", headers }),
+        exporter: new OTLPMetricExporter({ url: metricsUrl, headers }),
         exportIntervalMillis: metricsInterval,
       }),
     ],
@@ -75,7 +80,7 @@ export function setupOtel(
     const lp = new LoggerProvider({
       resource,
       processors: [
-        new BatchLogRecordProcessor(new OTLPLogExporter({ url: endpoint + "/v1/logs", headers }), {
+        new BatchLogRecordProcessor(new OTLPLogExporter({ url: logsUrl, headers }), {
           scheduledDelayMillis: logsInterval,
         }),
       ],
@@ -87,7 +92,7 @@ export function setupOtel(
   const tracerProvider = tracesDisabled ? null : (() => {
     const tp = new BasicTracerProvider({
       resource,
-      spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: endpoint + "/v1/traces", headers }))],
+      spanProcessors: [new BatchSpanProcessor(new OTLPTraceExporter({ url: tracesUrl, headers }))],
     })
     trace.setGlobalTracerProvider(tp)
     return tp
