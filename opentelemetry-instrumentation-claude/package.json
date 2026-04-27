@@ -67,7 +67,7 @@
     }
   },
   "dependencies": {
-    "@loongsuite/opentelemetry-util-genai": "^0.1.0",
+    "@loongsuite/opentelemetry-util-genai": "^0.1.1",
     "@opentelemetry/api": "^1.9.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
     "@opentelemetry/resources": "^1.30.0",
