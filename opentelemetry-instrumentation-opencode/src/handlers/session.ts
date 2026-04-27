@@ -53,6 +53,17 @@ function sweepSession(sessionID: string, ctx: HandlerContext, error?: boolean, e
       ctx.activeMessageSpans.delete(key)
     }
   }
+  // Clean up active step span for this session
+  const activeStep = ctx.activeStepSpans.get(sessionID)
+  if (activeStep) {
+    if (error) {
+      activeStep.span.setStatus({ code: SpanStatusCode.ERROR, message: "session ended" })
+    } else {
+      activeStep.span.setStatus({ code: SpanStatusCode.OK })
+    }
+    activeStep.span.end()
+    ctx.activeStepSpans.delete(sessionID)
+  }
   const activeInvocation = ctx.activeInvocations.get(sessionID)
   if (activeInvocation) {
     const errMsg = errorMessage ?? "session ended"

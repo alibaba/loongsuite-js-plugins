@@ -98,6 +98,14 @@ export type ActiveToolSpan = {
   startMs: number
 }
 
+/** Active ReAct step span tracked between step-start and step-finish part events. */
+export type ActiveStepSpan = {
+  span: Span
+  context: SpanContext
+  round: number
+  sessionID: string
+}
+
 export type ActiveInvocation = {
   invocationID: string
   sessionID: string
@@ -131,6 +139,8 @@ export type HandlerContext = {
   sessionInvocationSeq: Map<string, number>
   activeMessageSpans: Map<string, ActiveMessageSpan>
   activeToolSpans: Map<string, ActiveToolSpan>
+  /** Active ReAct step spans keyed by sessionID, one per session at most. */
+  activeStepSpans: Map<string, ActiveStepSpan>
   tracesDisabled: boolean
   /** Max characters per role content in gen_ai.input/output.messages (0 = unlimited). */
   maxContentSize: number

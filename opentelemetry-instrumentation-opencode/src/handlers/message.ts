@@ -1,6 +1,6 @@
 import { SeverityNumber } from "@opentelemetry/api-logs"
 import { SpanStatusCode } from "@opentelemetry/api"
-import type { AssistantMessage, EventMessageUpdated, EventMessagePartUpdated, ReasoningPart, ToolPart, TextPart } from "@opencode-ai/sdk"
+import type { AssistantMessage, EventMessageUpdated, EventMessagePartUpdated, ReasoningPart, StepStartPart, StepFinishPart, ToolPart, TextPart } from "@opencode-ai/sdk"
 import {
   accumulateSessionTotals,
   errorSummary,
@@ -44,8 +44,9 @@ function getOrCreateLLMSpan(
 
   const invocation = getOrCreateInvocation(sessionID, ctx, startTime)
   if (!invocation) return null
-  const stepRound = invocation.nextStepRound
-  invocation.nextStepRound += 1
+  const stepActive = ctx.activeStepSpans.get(sessionID)
+  const stepRound = stepActive?.round ?? invocation.nextStepRound
+  const parentCtx = stepActive?.context ?? invocation.agentContext
   const span = startChildSpan(
     ctx.tracer,
     genAiSpanName("chat"),
@@ -54,7 +55,7 @@ function getOrCreateLLMSpan(
       "gen_ai.loop.id": invocation.invocationID,
       "gen_ai.loop.iteration": stepRound,
     }),
-    invocation.agentContext,
+    parentCtx,
     startTime,
   )
 
@@ -399,6 +400,56 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
     return
   }
 
+  // Handle ReAct step boundaries — create/end STEP spans
+  if (part.type === "step-start") {
+    if (!isTraceEnabled(ctx) || !ctx.tracer) return
+    const sp = part as StepStartPart
+    const invocation = getOrCreateInvocation(sp.sessionID, ctx)
+    if (!invocation) return
+    // Close previous step span if still open (shouldn't normally happen, but defensive)
+    const prevStep = ctx.activeStepSpans.get(sp.sessionID)
+    if (prevStep) {
+      prevStep.span.setStatus({ code: SpanStatusCode.OK })
+      prevStep.span.end()
+    }
+    const round = invocation.nextStepRound
+    invocation.nextStepRound += 1
+    const stepSpan = startChildSpan(
+      ctx.tracer,
+      genAiSpanName("react step"),
+      genAiSpanAttrs("STEP", "react", sp.sessionID, ctx.commonAttrs, {
+        "gen_ai.react.round": round,
+        "gen_ai.loop.id": invocation.invocationID,
+        "gen_ai.loop.iteration": round,
+      }),
+      invocation.agentContext,
+    )
+    setBoundedMap(ctx.activeStepSpans, sp.sessionID, {
+      span: stepSpan,
+      context: stepSpan.spanContext(),
+      round,
+      sessionID: sp.sessionID,
+    })
+    ctx.log("debug", "otel: step span started", { sessionID: sp.sessionID, round })
+    return
+  }
+
+  if (part.type === "step-finish") {
+    const sp = part as StepFinishPart
+    const activeStep = ctx.activeStepSpans.get(sp.sessionID)
+    if (activeStep) {
+      activeStep.span.setAttribute("gen_ai.react.finish_reason", sp.reason)
+      activeStep.span.setAttribute("gen_ai.usage.input_tokens", sp.tokens.input)
+      activeStep.span.setAttribute("gen_ai.usage.output_tokens", sp.tokens.output)
+      activeStep.span.setAttribute("cost_usd", sp.cost)
+      activeStep.span.setStatus({ code: SpanStatusCode.OK })
+      activeStep.span.end()
+      ctx.activeStepSpans.delete(sp.sessionID)
+      ctx.log("debug", "otel: step span ended", { sessionID: sp.sessionID, round: activeStep.round, reason: sp.reason })
+    }
+    return
+  }
+
   if (part.type !== "tool") return
 
   const toolPart = part as ToolPart
@@ -412,7 +463,8 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
     })
     if (isTraceEnabled(ctx) && ctx.tracer) {
       const llmSpan = getOrCreateLLMSpan(toolPart.sessionID, toolPart.messageID, ctx, toolPart.state.time.start)
-      const parentCtx = llmSpan?.context
+      const stepActive = ctx.activeStepSpans.get(toolPart.sessionID)
+      const parentCtx = stepActive?.context
         ?? ctx.activeInvocations.get(toolPart.sessionID)?.agentContext
       const rawInput = typeof toolPart.state.input === "string"
         ? toolPart.state.input
@@ -424,9 +476,9 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
           "gen_ai.tool.name": toolPart.tool,
           "gen_ai.tool.call.id": toolPart.callID,
           "gen_ai.tool.call.arguments": rawInput,
-          "gen_ai.react.round": llmSpan?.stepRound ?? 0,
+          "gen_ai.react.round": stepActive?.round ?? llmSpan?.stepRound ?? 0,
           "gen_ai.loop.id": ctx.activeInvocations.get(toolPart.sessionID)?.invocationID ?? "",
-          "gen_ai.loop.iteration": llmSpan?.stepRound ?? 0,
+          "gen_ai.loop.iteration": stepActive?.round ?? llmSpan?.stepRound ?? 0,
         }),
         parentCtx,
         toolPart.state.time.start,
