@@ -10,7 +10,10 @@
 #   bash scripts/install.sh [options]
 #
 # Options:
-#   --endpoint <url>         OTLP exporter endpoint
+#   --endpoint <url>         OTLP exporter endpoint (base URL, appended with /v1/traces etc.)
+#   --traces-endpoint <url>  Per-signal OTLP traces endpoint (full URL, overrides --endpoint for traces)
+#   --metrics-endpoint <url> Per-signal OTLP metrics endpoint (full URL, overrides --endpoint for metrics)
+#   --logs-endpoint <url>    Per-signal OTLP logs endpoint (full URL, overrides --endpoint for logs)
 #   --headers <k=v,k=v>      OTLP headers (comma-separated key=value)
 #   --service-name <name>    Service name (written to OTEL_SERVICE_NAME)
 #   --debug                  Enable debug mode (console output, no backend needed)
@@ -34,6 +37,9 @@ PLUGIN_ENTRY="$PLUGINS_DIR/$PLUGIN_ENTRY_NAME"
 # 参数解析 / Argument parsing
 # ---------------------------------------------------------------------------
 ENDPOINT=""
+TRACES_ENDPOINT=""
+METRICS_ENDPOINT=""
+LOGS_ENDPOINT=""
 HEADERS=""
 SERVICE_NAME=""
 DEBUG_MODE="false"
@@ -43,6 +49,12 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --endpoint)       ENDPOINT="$2"; shift 2 ;;
     --endpoint=*)     ENDPOINT="${1#--endpoint=}"; shift ;;
+    --traces-endpoint)   TRACES_ENDPOINT="$2"; shift 2 ;;
+    --traces-endpoint=*) TRACES_ENDPOINT="${1#--traces-endpoint=}"; shift ;;
+    --metrics-endpoint)   METRICS_ENDPOINT="$2"; shift 2 ;;
+    --metrics-endpoint=*) METRICS_ENDPOINT="${1#--metrics-endpoint=}"; shift ;;
+    --logs-endpoint)   LOGS_ENDPOINT="$2"; shift 2 ;;
+    --logs-endpoint=*) LOGS_ENDPOINT="${1#--logs-endpoint=}"; shift ;;
     --headers)        HEADERS="$2"; shift 2 ;;
     --headers=*)      HEADERS="${1#--headers=}"; shift ;;
     --service-name)   SERVICE_NAME="$2"; shift 2 ;;
@@ -51,7 +63,7 @@ while [[ $# -gt 0 ]]; do
     --lang)           FORCE_LANG="$2"; shift 2 ;;
     --lang=*)         FORCE_LANG="${1#--lang=}"; shift ;;
     -h|--help)
-      echo "Usage: bash scripts/install.sh [--endpoint <url>] [--headers <k=v>] [--service-name <name>] [--debug]"
+      echo "Usage: bash scripts/install.sh [--endpoint <url>] [--traces-endpoint <url>] [--metrics-endpoint <url>] [--logs-endpoint <url>] [--headers <k=v>] [--service-name <name>] [--debug]"
       exit 0 ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -163,6 +175,18 @@ if [ -n "$ENDPOINT" ]; then
     _ENV_LINES="${_ENV_LINES}
 process.env[\"OTEL_EXPORTER_OTLP_ENDPOINT\"] ||= \"${ENDPOINT}\";"
 fi
+if [ -n "$TRACES_ENDPOINT" ]; then
+    _ENV_LINES="${_ENV_LINES}
+process.env[\"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT\"] ||= \"${TRACES_ENDPOINT}\";"
+fi
+if [ -n "$METRICS_ENDPOINT" ]; then
+    _ENV_LINES="${_ENV_LINES}
+process.env[\"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT\"] ||= \"${METRICS_ENDPOINT}\";"
+fi
+if [ -n "$LOGS_ENDPOINT" ]; then
+    _ENV_LINES="${_ENV_LINES}
+process.env[\"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT\"] ||= \"${LOGS_ENDPOINT}\";"
+fi
 if [ -n "$SERVICE_NAME" ]; then
     _ENV_LINES="${_ENV_LINES}
 process.env[\"OTEL_SERVICE_NAME\"] ||= \"${SERVICE_NAME}\";"
@@ -257,6 +281,15 @@ build_env_block() {
     fi
     if [ -n "$ENDPOINT" ]; then
         echo "export OTEL_EXPORTER_OTLP_ENDPOINT=\"${ENDPOINT}\""
+    fi
+    if [ -n "$TRACES_ENDPOINT" ]; then
+        echo "export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=\"${TRACES_ENDPOINT}\""
+    fi
+    if [ -n "$METRICS_ENDPOINT" ]; then
+        echo "export OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=\"${METRICS_ENDPOINT}\""
+    fi
+    if [ -n "$LOGS_ENDPOINT" ]; then
+        echo "export OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=\"${LOGS_ENDPOINT}\""
     fi
     if [ -n "$HEADERS" ]; then
         echo "export OTEL_EXPORTER_OTLP_HEADERS=\"${HEADERS}\""
