@@ -310,6 +310,7 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
           agentContext: agentSpan.spanContext(),
           nextStepRound: 1,
           inputSet: true,
+          entryStartTime: Date.now(),
         })
         ctx.sessionHistory.set(input.sessionID, [])
       }

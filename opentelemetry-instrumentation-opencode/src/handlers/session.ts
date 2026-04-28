@@ -11,7 +11,7 @@ export function handleSessionCreated(e: EventSessionCreated, ctx: HandlerContext
   if (isMetricEnabled("session.count", ctx)) {
     ctx.instruments.sessionCounter.add(1, { ...ctx.commonAttrs, "session.id": sessionID })
   }
-  setBoundedMap(ctx.sessionTotals, sessionID, { startMs: createdAt, tokens: 0, cost: 0, messages: 0 })
+  setBoundedMap(ctx.sessionTotals, sessionID, { startMs: createdAt, tokens: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, messages: 0 })
 
   ctx.logger.emit({
     severityNumber: SeverityNumber.INFO,
