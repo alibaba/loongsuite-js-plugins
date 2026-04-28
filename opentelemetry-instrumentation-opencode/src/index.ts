@@ -101,6 +101,7 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
   const sessionInvocationSeq = new Map()
   const activeMessageSpans = new Map()
   const activeToolSpans = new Map()
+  const activeStepSpans = new Map()
   const pendingUserPrompts = new Map()
   const sessionHistory = new Map()
   const pendingSystemPrompts = new Map()
@@ -133,6 +134,7 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
     sessionInvocationSeq,
     activeMessageSpans,
     activeToolSpans,
+    activeStepSpans,
     tracesDisabled: config.tracesDisabled,
     maxContentSize: config.maxContentSize,
     pendingUserPrompts,
@@ -264,6 +266,13 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
       if (isTraceEnabled(ctx) && ctx.tracer) {
         const previous = ctx.activeInvocations.get(input.sessionID)
         if (previous) {
+          // Close any lingering step span from the previous invocation
+          const prevStep = ctx.activeStepSpans.get(input.sessionID)
+          if (prevStep) {
+            prevStep.span.setStatus({ code: SpanStatusCode.OK })
+            prevStep.span.end()
+            ctx.activeStepSpans.delete(input.sessionID)
+          }
           previous.agentSpan.setStatus({ code: SpanStatusCode.OK })
           previous.agentSpan.end()
           previous.entrySpan.setStatus({ code: SpanStatusCode.OK })
@@ -301,6 +310,7 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
           agentContext: agentSpan.spanContext(),
           nextStepRound: 1,
           inputSet: true,
+          entryStartTime: Date.now(),
         })
         ctx.sessionHistory.set(input.sessionID, [])
       }
