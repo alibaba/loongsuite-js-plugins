@@ -2,17 +2,24 @@ import { describe, test, expect, afterEach } from "bun:test"
 import { buildResource } from "../src/otel.ts"
 
 describe("buildResource", () => {
-  const originalEnv = process.env["OTEL_RESOURCE_ATTRIBUTES"]
+  const originalResAttrs = process.env["OTEL_RESOURCE_ATTRIBUTES"]
+  const originalServiceName = process.env["OTEL_SERVICE_NAME"]
   afterEach(() => {
-    if (originalEnv === undefined) {
+    if (originalResAttrs === undefined) {
       delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
     } else {
-      process.env["OTEL_RESOURCE_ATTRIBUTES"] = originalEnv
+      process.env["OTEL_RESOURCE_ATTRIBUTES"] = originalResAttrs
+    }
+    if (originalServiceName === undefined) {
+      delete process.env["OTEL_SERVICE_NAME"]
+    } else {
+      process.env["OTEL_SERVICE_NAME"] = originalServiceName
     }
   })
 
   test("includes service.name, app.version, os.type, host.arch", () => {
     delete process.env["OTEL_RESOURCE_ATTRIBUTES"]
+    delete process.env["OTEL_SERVICE_NAME"]
     const resource = buildResource("1.2.3")
     const attrs = resource.attributes
     expect(attrs["service.name"]).toBe("opencode")
