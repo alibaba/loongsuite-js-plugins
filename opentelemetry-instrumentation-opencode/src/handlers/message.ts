@@ -69,6 +69,8 @@ function getOrCreateLLMSpan(
     textParts: new Map(),
     toolCalls: [],
     toolResults: [],
+    startTimeMs: startTime ?? Date.now(),
+    reasoningTimeMs: 0,
   }
   setBoundedMap(ctx.activeMessageSpans, key, active)
   flushDeferredMessageText(sessionID, messageID, active, ctx)
@@ -114,6 +116,7 @@ function getOrCreateInvocation(
     agentSpan,
     agentContext: agentSpan.spanContext(),
     nextStepRound: 1,
+    entryStartTime: startTime ?? Date.now(),
   }
   setBoundedMap(ctx.activeInvocations, sessionID, invocation)
   return invocation
@@ -241,7 +244,7 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
     ctx.instruments.modelUsageCounter.add(1, { ...ctx.commonAttrs, "session.id": sessionID, model: modelID, provider: providerID })
   }
 
-  accumulateSessionTotals(sessionID, totalTokens, assistant.cost, ctx)
+  accumulateSessionTotals(sessionID, totalTokens, assistant.tokens.input, assistant.tokens.output, assistant.tokens.cache.read, assistant.tokens.cache.write, assistant.cost, ctx)
 
   ctx.log("debug", "otel: token+cost counters incremented", {
     sessionID,
@@ -265,12 +268,33 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
     const { span } = active
     span.updateName(genAiSpanName("chat", modelID))
     span.setAttribute("gen_ai.request.model", modelID)
+    span.setAttribute("gen_ai.response.model", modelID)
     span.setAttribute("gen_ai.provider.name", providerID)
     span.setAttribute("gen_ai.usage.input_tokens", assistant.tokens.input)
     span.setAttribute("gen_ai.usage.output_tokens", assistant.tokens.output)
     span.setAttribute("gen_ai.usage.total_tokens", totalTokens)
+    span.setAttribute("gen_ai.usage.cache_read.input_tokens", assistant.tokens.cache.read)
+    span.setAttribute("gen_ai.usage.cache_creation.input_tokens", assistant.tokens.cache.write)
+    span.setAttribute("gen_ai.output.type", "text")
     span.setAttribute("cost_usd", assistant.cost)
     span.setAttribute("duration_ms", duration)
+
+    // LLM-level time-to-first-token (nanoseconds)
+    if (active.firstTextTimeMs) {
+      const ttftNs = (active.firstTextTimeMs - active.startTimeMs) * 1_000_000
+      span.setAttribute("gen_ai.response.time_to_first_token", ttftNs)
+    }
+
+    // Reasoning time (milliseconds)
+    if (active.reasoningTimeMs > 0) {
+      span.setAttribute("gen_ai.response.reasoning_time", active.reasoningTimeMs)
+    }
+
+    // System instructions
+    const systemPrompt = ctx.pendingSystemPrompts.get(sessionID)
+    if (systemPrompt) {
+      span.setAttribute("gen_ai.system_instructions", JSON.stringify([{ type: "text", content: systemPrompt }]))
+    }
 
     const maxLen = ctx.maxContentSize
     const inputMsgs = truncateMessages(buildInputMessages(sessionID, ctx), maxLen)
@@ -288,9 +312,13 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
     appendToSessionHistory(sessionID, active, ctx)
 
     if (hasError) {
-      span.setAttribute("gen_ai.react.finish_reason", "error")
+      const finishReason = "error"
+      span.setAttribute("gen_ai.response.finish_reasons", JSON.stringify([finishReason]))
+      span.setAttribute("gen_ai.react.finish_reason", finishReason)
       span.setStatus({ code: SpanStatusCode.ERROR, message: errorSummary(assistant.error) })
     } else {
+      const finishReason = active.toolCalls.length > 0 ? "tool_calls" : "stop"
+      span.setAttribute("gen_ai.response.finish_reasons", JSON.stringify([finishReason]))
       span.setAttribute("gen_ai.react.finish_reason", "success")
       span.setStatus({ code: SpanStatusCode.OK })
     }
@@ -302,6 +330,15 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
       if (outputMsgsJson) {
         invocation.entrySpan.setAttribute("gen_ai.output.messages", outputMsgsJson)
         invocation.agentSpan.setAttribute("gen_ai.output.messages", outputMsgsJson)
+      }
+      // Update cumulative token totals on the AGENT span
+      const totals = ctx.sessionTotals.get(sessionID)
+      if (totals) {
+        invocation.agentSpan.setAttribute("gen_ai.usage.input_tokens", totals.inputTokens)
+        invocation.agentSpan.setAttribute("gen_ai.usage.output_tokens", totals.outputTokens)
+        invocation.agentSpan.setAttribute("gen_ai.usage.total_tokens", totals.tokens)
+        invocation.agentSpan.setAttribute("gen_ai.usage.cache_read.input_tokens", totals.cacheReadTokens)
+        invocation.agentSpan.setAttribute("gen_ai.usage.cache_creation.input_tokens", totals.cacheWriteTokens)
       }
     }
   }
@@ -374,9 +411,21 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
   if (part.type === "text") {
     const textPart = part as TextPart
     const key = `${textPart.sessionID}:${textPart.messageID}`
+    // Record time-to-first-token on the ENTRY span (once per invocation)
+    const invocation = ctx.activeInvocations.get(textPart.sessionID)
+    if (invocation && !invocation.firstTokenSet) {
+      const now = textPart.time?.start ?? Date.now()
+      const ttftNs = (now - invocation.entryStartTime) * 1_000_000
+      invocation.entrySpan.setAttribute("gen_ai.response.time_to_first_token", ttftNs)
+      invocation.agentSpan.setAttribute("gen_ai.response.time_to_first_token", ttftNs)
+      invocation.firstTokenSet = true
+    }
     const existing = ctx.activeMessageSpans.get(key)
     if (existing) {
       existing.textParts.set(textPart.id, textPart.text)
+      if (!existing.firstTextTimeMs) {
+        existing.firstTextTimeMs = textPart.time?.start ?? Date.now()
+      }
       return
     }
     const t0 = textPart.time?.start
@@ -390,13 +439,21 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
       return
     }
     const active = getOrCreateLLMSpan(textPart.sessionID, textPart.messageID, ctx, t0)
-    if (active) active.textParts.set(textPart.id, textPart.text)
+    if (active) {
+      active.textParts.set(textPart.id, textPart.text)
+      if (!active.firstTextTimeMs) {
+        active.firstTextTimeMs = t0
+      }
+    }
     return
   }
 
   if (part.type === "reasoning") {
     const rp = part as ReasoningPart
-    getOrCreateLLMSpan(rp.sessionID, rp.messageID, ctx, rp.time.start)
+    const llmSpan = getOrCreateLLMSpan(rp.sessionID, rp.messageID, ctx, rp.time.start)
+    if (llmSpan && rp.time.end) {
+      llmSpan.reasoningTimeMs += rp.time.end - rp.time.start
+    }
     return
   }
 

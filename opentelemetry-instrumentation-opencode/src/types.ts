@@ -56,6 +56,10 @@ export type Instruments = {
 export type SessionTotals = {
   startMs: number
   tokens: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
   cost: number
   messages: number
 }
@@ -88,6 +92,12 @@ export type ActiveMessageSpan = {
   toolCalls: ToolCallInfo[]
   /** Tool results collected during this LLM call (become next call's input). */
   toolResults: ToolResultInfo[]
+  /** Epoch ms when the LLM span was created (used for TTFT calculation). */
+  startTimeMs: number
+  /** Epoch ms of the first text part arrival (undefined until first text). */
+  firstTextTimeMs?: number
+  /** Accumulated reasoning duration in ms across all reasoning parts. */
+  reasoningTimeMs: number
 }
 
 /** Active tool trace span tracked between tool running and completed/error. */
@@ -116,6 +126,8 @@ export type ActiveInvocation = {
   agentContext: SpanContext
   nextStepRound: number
   inputSet?: boolean
+  entryStartTime: number
+  firstTokenSet?: boolean
 }
 
 export type SessionAgentMeta = {

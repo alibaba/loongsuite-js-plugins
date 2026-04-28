@@ -79,6 +79,8 @@ export function genAiSpanAttrs(
     "gen_ai.operation.name": operation,
     "gen_ai.session.id": sessionID,
     "gen_ai.conversation.id": sessionID,
+    "gen_ai.user.id": sessionID,
+    "gen_ai.framework": "opencode",
     ...commonAttrs,
     ...extra,
   }
@@ -144,6 +146,10 @@ function truncateMessageParts(msg: unknown, maxLen: number): unknown {
 export function accumulateSessionTotals(
   sessionID: string,
   tokens: number,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens: number,
+  cacheWriteTokens: number,
   cost: number,
   ctx: HandlerContext,
 ) {
@@ -152,6 +158,10 @@ export function accumulateSessionTotals(
   setBoundedMap(ctx.sessionTotals, sessionID, {
     startMs: existing.startMs,
     tokens: existing.tokens + tokens,
+    inputTokens: existing.inputTokens + inputTokens,
+    outputTokens: existing.outputTokens + outputTokens,
+    cacheReadTokens: existing.cacheReadTokens + cacheReadTokens,
+    cacheWriteTokens: existing.cacheWriteTokens + cacheWriteTokens,
     cost: existing.cost + cost,
     messages: existing.messages + 1,
   })
