@@ -25,6 +25,11 @@ const {
   convertSystemPrompt, convertInputMessages, convertOutputMessages,
   extractRequestParams, convertToolDefinitions,
 } = require("./message-converter");
+const {
+  isLogEnabled, writeLogRecords, computeHash, INITIAL_HASH,
+  shouldLogFullMessages,
+} = require("./logger");
+const config = require("./config");
 
 // ---------------------------------------------------------------------------
 // Semantic convention dialect
@@ -32,12 +37,14 @@ const {
 // default (ALIBABA_CLOUD or unset)             → gen_ai.span.kind
 // Auto-detect: endpoint containing "sunfire" implies ALIBABA_GROUP
 // ---------------------------------------------------------------------------
-const _sunfireDetected = (process.env.OTEL_EXPORTER_OTLP_ENDPOINT ?? "").includes("sunfire");
+const _dialect = config.getSemconvDialect();
+const _endpoint = config.getEndpoint();
+const _sunfireDetected = _endpoint.includes("sunfire");
 const SPAN_KIND_ATTR =
-  process.env.LOONGSUITE_SEMCONV_DIALECT_NAME === "ALIBABA_GROUP" || _sunfireDetected
+  _dialect === "ALIBABA_GROUP" || _sunfireDetected
     ? "gen_ai.span_kind_name"
     : "gen_ai.span.kind";
-const NEEDS_DIALECT_ATTR = process.env.LOONGSUITE_SEMCONV_DIALECT_NAME === "ALIBABA_GROUP" || _sunfireDetected;
+const NEEDS_DIALECT_ATTR = _dialect === "ALIBABA_GROUP" || _sunfireDetected;
 
 // ---------------------------------------------------------------------------
 // 语言检测 / Language detection
@@ -704,6 +711,136 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
 }
 
 // ---------------------------------------------------------------------------
+// generateTurnLogRecords — JSONL log records for a single turn
+// ---------------------------------------------------------------------------
+
+function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, traceId) {
+  const records = [];
+  const turnId = `${sessionId}:t${turnIndex + 1}`;
+  let stepRound = 0;
+  let currentStepId = null;
+  let runningHash = prevHash;
+
+  if (turn.prompt) {
+    records.push({
+      timestamp_ns: Math.round(turn.startTime * 1e9),
+      trace_id: traceId || null,
+      "gen_ai.session_id": sessionId,
+      "gen_ai.turn_id": turnId,
+      "gen_ai.agent_name": "claude-code",
+      "gen_ai.role": "user",
+      "gen_ai.input_messages_delta": JSON.stringify(
+        [{ role: "user", parts: [{ type: "text", content: turn.prompt }] }]
+      ),
+    });
+  }
+
+  const preToolUseMap = {};
+  for (const ev of turn.events) {
+    if (ev.type === "pre_tool_use" && ev.tool_use_id) {
+      preToolUseMap[ev.tool_use_id] = ev;
+    }
+  }
+
+  for (const ev of turn.events) {
+    const evTs = ev.timestamp || turn.endTime;
+
+    if (ev.type === "llm_call") {
+      stepRound++;
+      currentStepId = `${turnId}:s${stepRound}`;
+      const responseId = ev.response_id || `${currentStepId}:r`;
+      const protocol = ev.protocol || "anthropic";
+
+      const inputMsgs = convertInputMessages(ev.input_messages, protocol);
+      const currentFullHash = computeHash(INITIAL_HASH, inputMsgs);
+
+      const delta = inputMsgs;
+      const logFull = shouldLogFullMessages(runningHash, delta, currentFullHash);
+
+      const record = {
+        timestamp_ns: Math.round((ev.request_start_time || evTs) * 1e9),
+        trace_id: traceId || null,
+        "gen_ai.session_id": sessionId,
+        "gen_ai.turn_id": turnId,
+        "gen_ai.step_id": currentStepId,
+        "gen_ai.response_id": responseId,
+        "gen_ai.agent_id": sessionId,
+        "gen_ai.agent_name": "claude-code",
+        "gen_ai.provider_name": "anthropic",
+        "gen_ai.request_model": ev.model || model,
+        "gen_ai.response_model": ev.model || model,
+        "gen_ai.response_finish_reasons": ev.stop_reason || "stop",
+        "gen_ai.input_tokens": ev.input_tokens || 0,
+        "gen_ai.output_tokens": ev.output_tokens || 0,
+        "gen_ai.cache_write_tokens": ev.cache_creation_input_tokens || 0,
+        "gen_ai.cache_read_tokens": ev.cache_read_input_tokens || 0,
+        "gen_ai.role": "assistant",
+        "gen_ai.input_messages_hash": currentFullHash,
+        "gen_ai.input_messages_delta": JSON.stringify(delta),
+        "gen_ai.output_messages": JSON.stringify(
+          convertOutputMessages(ev.output_content, ev.stop_reason)
+        ),
+      };
+
+      if (logFull) {
+        record["gen_ai.input_messages"] = JSON.stringify(inputMsgs);
+      }
+
+      if (ev.is_error) {
+        record["gen_ai.error_type"] = "LLMError";
+        record["gen_ai.error_message"] = ev.error_message || "unknown error";
+      }
+
+      records.push(record);
+      runningHash = currentFullHash;
+
+    } else if (ev.type === "post_tool_use") {
+      const toolName = ev.tool_name || "unknown";
+      if (toolName === "Agent" || toolName === "agent") continue;
+
+      const preEv = preToolUseMap[ev.tool_use_id] || {};
+      const effectiveName = preEv.tool_name || toolName;
+      const effectiveInput = preEv.tool_input || {};
+
+      records.push({
+        timestamp_ns: Math.round(evTs * 1e9),
+        trace_id: traceId || null,
+        "gen_ai.session_id": sessionId,
+        "gen_ai.turn_id": turnId,
+        "gen_ai.step_id": currentStepId || turnId,
+        "gen_ai.role": "tool",
+        "gen_ai.tool_name": effectiveName,
+        "gen_ai.tool_arguments": JSON.stringify(effectiveInput),
+        "gen_ai.tool_results": JSON.stringify(extractToolResult(ev.tool_response)),
+        "gen_ai.tool_call_id": ev.tool_use_id || "",
+      });
+    }
+  }
+
+  const consumedIds = new Set(
+    turn.events.filter(e => e.type === "post_tool_use" && e.tool_use_id).map(e => e.tool_use_id)
+  );
+  for (const [toolUseId, preEv] of Object.entries(preToolUseMap)) {
+    if (consumedIds.has(toolUseId)) continue;
+    const toolName = preEv.tool_name || "unknown";
+    if (toolName === "Agent" || toolName === "agent") continue;
+    records.push({
+      timestamp_ns: Math.round((preEv.timestamp || turn.endTime) * 1e9),
+      trace_id: traceId || null,
+      "gen_ai.session_id": sessionId,
+      "gen_ai.turn_id": turnId,
+      "gen_ai.step_id": currentStepId || turnId,
+      "gen_ai.role": "tool",
+      "gen_ai.tool_name": toolName,
+      "gen_ai.tool_arguments": JSON.stringify(preEv.tool_input || {}),
+      "gen_ai.tool_call_id": toolUseId,
+    });
+  }
+
+  return { records, hash: runningHash };
+}
+
+// ---------------------------------------------------------------------------
 // export_session_trace — per-turn independent traces with ENTRY → AGENT → STEP → LLM/TOOL
 // ---------------------------------------------------------------------------
 
@@ -743,6 +880,7 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
   turns[turns.length - 1].endTime = stopTime;
 
   // Export each turn as an independent trace
+  const entryInvs = [];
   for (let i = 0; i < turns.length; i++) {
     const turn = turns[i];
     const isLast = i === turns.length - 1;
@@ -777,6 +915,7 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
       attributes: sessionAttrs(sessionId, "ENTRY"),
     });
     handler.startEntry(entryInv, undefined, hrTime(turn.startTime));
+    entryInvs.push(entryInv);
 
     // AGENT span
     const agentInv = createInvokeAgentInvocation("anthropic", {
@@ -804,6 +943,33 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
     // Close spans
     handler.stopInvokeAgent(agentInv, hrTime(turn.endTime));
     handler.stopEntry(entryInv, hrTime(turn.endTime));
+  }
+
+  // Write JSONL logs (independent of trace export — failure doesn't block traces)
+  if (isLogEnabled()) {
+    try {
+      const allLogRecords = [];
+      let logHash = INITIAL_HASH;
+
+      for (let i = 0; i < turns.length; i++) {
+        const turn = turns[i];
+        let turnTraceId = null;
+        try {
+          const entrySpan = trace.getSpan(entryInvs[i].contextToken);
+          if (entrySpan) turnTraceId = entrySpan.spanContext().traceId;
+        } catch {}
+
+        const { records, hash } = generateTurnLogRecords(
+          turn, i, sessionId, state.model || "unknown", logHash, turnTraceId
+        );
+        allLogRecords.push(...records);
+        logHash = hash;
+      }
+
+      writeLogRecords(allLogRecords);
+    } catch (err) {
+      console.error("[otel-claude-hook] log writing failed (non-fatal):", err?.message || String(err));
+    }
   }
 
   await shutdownTelemetry();
@@ -1159,21 +1325,33 @@ function cmdShowConfig() {
 }
 
 function cmdCheckEnv() {
-  const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-  const debug = process.env.CLAUDE_TELEMETRY_DEBUG;
+  const endpoint = config.getEndpoint();
+  const debugMode = config.isDebug();
+
+  // Show config file status
+  const cfgFile = config.loadConfigFile();
+  const hasCfgFile = Object.keys(cfgFile).length > 0;
+  if (hasCfgFile) {
+    console.error(msg(`📄 配置文件: ${config.CONFIG_PATH}`, `📄 Config file: ${config.CONFIG_PATH}`));
+    const cfgKeys = Object.keys(cfgFile).filter(k => cfgFile[k] !== null && cfgFile[k] !== undefined && cfgFile[k] !== "");
+    if (cfgKeys.length > 0) {
+      console.error(msg(`   已配置项: ${cfgKeys.join(", ")}`, `   Configured keys: ${cfgKeys.join(", ")}`));
+    }
+  }
 
   if (endpoint) {
     console.error(msg(`📊 OTEL 端点: ${endpoint}`, `📊 OTEL endpoint: ${endpoint}`));
-    if (process.env.OTEL_EXPORTER_OTLP_HEADERS) {
+    const headers = config.getHeaders();
+    if (headers) {
       console.error(msg("   请求头: ***已配置***", "   Headers: ***configured***"));
     }
-  } else if (debug) {
+  } else if (debugMode) {
     console.error(msg("🔍 调试模式已启用（仅控制台输出）", "🔍 Debug mode active (console output only)"));
   } else {
     console.error(
       msg(
-        "❌ 未配置遥测后端。\n设置 OTEL_EXPORTER_OTLP_ENDPOINT 或 CLAUDE_TELEMETRY_DEBUG=1",
-        "❌ No telemetry backend configured.\nSet OTEL_EXPORTER_OTLP_ENDPOINT or CLAUDE_TELEMETRY_DEBUG=1"
+        "❌ 未配置遥测后端。\n设置 OTEL_EXPORTER_OTLP_ENDPOINT 或配置文件 ~/.claude/otel-config.json",
+        "❌ No telemetry backend configured.\nSet OTEL_EXPORTER_OTLP_ENDPOINT or config file ~/.claude/otel-config.json"
       )
     );
     process.exit(1);
@@ -1371,6 +1549,7 @@ module.exports = {
   _replayEventsAsSpans: replayEventsAsSpans,
   _splitEventsByTurn: splitEventsByTurn,
   _exportSessionTrace: exportSessionTrace,
+  _generateTurnLogRecords: generateTurnLogRecords,
   _installIntercept: installIntercept,
   _removeAliasFromFile: removeAliasFromFile,
   _cmdSubagentStartWithEvent: function(event) {

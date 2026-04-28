@@ -820,3 +820,280 @@ describe("cmdUninstall", () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
+
+// ─── generateTurnLogRecords ──────────────────────────────────────────────
+describe("generateTurnLogRecords", () => {
+  const { INITIAL_HASH, computeHash } = require("../src/logger");
+  const sessionId = "test-session";
+  const model = "claude-sonnet-4-5-20250514";
+  const traceId = "abc123def456";
+
+  test("single LLM call turn generates user + assistant records", () => {
+    const turn = {
+      prompt: "Hello",
+      startTime: 1000,
+      endTime: 1001,
+      events: [
+        {
+          type: "llm_call",
+          timestamp: 1000.5,
+          request_start_time: 1000.1,
+          model: "claude-sonnet-4-5-20250514",
+          input_messages: [{ role: "user", content: "Hello" }],
+          output_content: [{ type: "text", text: "Hi there!" }],
+          stop_reason: "end_turn",
+          input_tokens: 10,
+          output_tokens: 5,
+          cache_read_input_tokens: 0,
+          cache_creation_input_tokens: 0,
+        },
+      ],
+    };
+    const { records, hash } = cli._generateTurnLogRecords(turn, 0, sessionId, model, INITIAL_HASH, traceId);
+
+    expect(records).toHaveLength(2);
+
+    const userRec = records[0];
+    expect(userRec["gen_ai.role"]).toBe("user");
+    expect(userRec["gen_ai.session_id"]).toBe(sessionId);
+    expect(userRec["gen_ai.turn_id"]).toBe(`${sessionId}:t1`);
+    expect(userRec.trace_id).toBe(traceId);
+
+    const llmRec = records[1];
+    expect(llmRec["gen_ai.role"]).toBe("assistant");
+    expect(llmRec["gen_ai.step_id"]).toBe(`${sessionId}:t1:s1`);
+    expect(llmRec["gen_ai.input_tokens"]).toBe(10);
+    expect(llmRec["gen_ai.output_tokens"]).toBe(5);
+    expect(llmRec["gen_ai.request_model"]).toBe(model);
+    expect(llmRec["gen_ai.input_messages_hash"]).toHaveLength(32);
+    expect(llmRec["gen_ai.output_messages"]).toBeDefined();
+    expect(hash).toBe(llmRec["gen_ai.input_messages_hash"]);
+  });
+
+  test("multi-step turn generates user + assistant + tool + assistant", () => {
+    const turn = {
+      prompt: "List files",
+      startTime: 1000,
+      endTime: 1003,
+      events: [
+        {
+          type: "llm_call",
+          timestamp: 1000.5,
+          input_messages: [{ role: "user", content: "List files" }],
+          output_content: [
+            { type: "text", text: "Let me check." },
+            { type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } },
+          ],
+          stop_reason: "tool_use",
+          input_tokens: 20,
+          output_tokens: 10,
+        },
+        {
+          type: "pre_tool_use",
+          timestamp: 1001,
+          tool_name: "Bash",
+          tool_input: { command: "ls" },
+          tool_use_id: "t1",
+        },
+        {
+          type: "post_tool_use",
+          timestamp: 1001.5,
+          tool_name: "Bash",
+          tool_response: "file1.txt\nfile2.txt",
+          tool_use_id: "t1",
+        },
+        {
+          type: "llm_call",
+          timestamp: 1002,
+          input_messages: [
+            { role: "user", content: "List files" },
+            { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }] },
+            { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "file1.txt\nfile2.txt" }] },
+          ],
+          output_content: [{ type: "text", text: "Here are the files." }],
+          stop_reason: "end_turn",
+          input_tokens: 30,
+          output_tokens: 8,
+        },
+      ],
+    };
+    const { records } = cli._generateTurnLogRecords(turn, 0, sessionId, model, INITIAL_HASH, traceId);
+
+    expect(records).toHaveLength(4);
+    expect(records[0]["gen_ai.role"]).toBe("user");
+    expect(records[1]["gen_ai.role"]).toBe("assistant");
+    expect(records[1]["gen_ai.step_id"]).toBe(`${sessionId}:t1:s1`);
+    expect(records[2]["gen_ai.role"]).toBe("tool");
+    expect(records[2]["gen_ai.tool_name"]).toBe("Bash");
+    expect(records[2]["gen_ai.tool_call_id"]).toBe("t1");
+    expect(records[3]["gen_ai.role"]).toBe("assistant");
+    expect(records[3]["gen_ai.step_id"]).toBe(`${sessionId}:t1:s2`);
+  });
+
+  test("error LLM call includes error fields", () => {
+    const turn = {
+      prompt: "test",
+      startTime: 1000,
+      endTime: 1001,
+      events: [{
+        type: "llm_call",
+        timestamp: 1000.5,
+        input_messages: [{ role: "user", content: "test" }],
+        output_content: null,
+        stop_reason: "error",
+        is_error: true,
+        error_message: "rate limit exceeded",
+        input_tokens: 0,
+        output_tokens: 0,
+      }],
+    };
+    const { records } = cli._generateTurnLogRecords(turn, 0, sessionId, model, INITIAL_HASH, null);
+    const llmRec = records.find(r => r["gen_ai.role"] === "assistant");
+    expect(llmRec["gen_ai.error_type"]).toBe("LLMError");
+    expect(llmRec["gen_ai.error_message"]).toBe("rate limit exceeded");
+  });
+
+  test("orphaned pre_tool_use generates tool record without results", () => {
+    const turn = {
+      prompt: null,
+      startTime: 1000,
+      endTime: 1001,
+      events: [{
+        type: "pre_tool_use",
+        timestamp: 1000.5,
+        tool_name: "Read",
+        tool_input: { file: "test.js" },
+        tool_use_id: "orphan1",
+      }],
+    };
+    const { records } = cli._generateTurnLogRecords(turn, 0, sessionId, model, INITIAL_HASH, null);
+    expect(records).toHaveLength(1);
+    expect(records[0]["gen_ai.role"]).toBe("tool");
+    expect(records[0]["gen_ai.tool_name"]).toBe("Read");
+    expect(records[0]["gen_ai.tool_call_id"]).toBe("orphan1");
+    expect(records[0]["gen_ai.tool_results"]).toBeUndefined();
+  });
+
+  test("Agent tool calls are skipped", () => {
+    const turn = {
+      prompt: "test",
+      startTime: 1000,
+      endTime: 1001,
+      events: [
+        { type: "pre_tool_use", timestamp: 1000.2, tool_name: "Agent", tool_input: {}, tool_use_id: "a1" },
+        { type: "post_tool_use", timestamp: 1000.5, tool_name: "Agent", tool_response: {}, tool_use_id: "a1" },
+      ],
+    };
+    const { records } = cli._generateTurnLogRecords(turn, 0, sessionId, model, INITIAL_HASH, null);
+    expect(records).toHaveLength(1); // only user record
+    expect(records[0]["gen_ai.role"]).toBe("user");
+  });
+
+  test("hash chaining — second turn uses first turn hash as prevHash", () => {
+    const turn1 = {
+      prompt: "Hello",
+      startTime: 1000,
+      endTime: 1001,
+      events: [{
+        type: "llm_call",
+        timestamp: 1000.5,
+        input_messages: [{ role: "user", content: "Hello" }],
+        output_content: [{ type: "text", text: "Hi" }],
+        stop_reason: "end_turn",
+        input_tokens: 5,
+        output_tokens: 2,
+      }],
+    };
+    const turn2 = {
+      prompt: "How are you?",
+      startTime: 1001,
+      endTime: 1002,
+      events: [{
+        type: "llm_call",
+        timestamp: 1001.5,
+        input_messages: [
+          { role: "user", content: "Hello" },
+          { role: "assistant", content: "Hi" },
+          { role: "user", content: "How are you?" },
+        ],
+        output_content: [{ type: "text", text: "Good" }],
+        stop_reason: "end_turn",
+        input_tokens: 15,
+        output_tokens: 3,
+      }],
+    };
+
+    const r1 = cli._generateTurnLogRecords(turn1, 0, sessionId, model, INITIAL_HASH, null);
+    const r2 = cli._generateTurnLogRecords(turn2, 1, sessionId, model, r1.hash, null);
+
+    const hash1 = r1.records.find(r => r["gen_ai.role"] === "assistant")["gen_ai.input_messages_hash"];
+    const hash2 = r2.records.find(r => r["gen_ai.role"] === "assistant")["gen_ai.input_messages_hash"];
+
+    expect(hash1).not.toBe(hash2);
+    expect(hash1).toHaveLength(32);
+    expect(hash2).toHaveLength(32);
+  });
+
+  test("first LLM call with matching hash does not log full input_messages", () => {
+    const turn = {
+      prompt: "test",
+      startTime: 1000,
+      endTime: 1001,
+      events: [{
+        type: "llm_call",
+        timestamp: 1000.5,
+        input_messages: [{ role: "user", content: "test" }],
+        output_content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        input_tokens: 3,
+        output_tokens: 1,
+      }],
+    };
+    const { records } = cli._generateTurnLogRecords(turn, 0, sessionId, model, INITIAL_HASH, null);
+    const llmRec = records.find(r => r["gen_ai.role"] === "assistant");
+    expect(llmRec["gen_ai.input_messages"]).toBeUndefined();
+    expect(llmRec["gen_ai.input_messages_delta"]).toBeDefined();
+  });
+
+  test("logs full input_messages when hash mismatches (context change)", () => {
+    const turn = {
+      prompt: "test",
+      startTime: 1000,
+      endTime: 1001,
+      events: [{
+        type: "llm_call",
+        timestamp: 1000.5,
+        input_messages: [{ role: "user", content: "test" }],
+        output_content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        input_tokens: 3,
+        output_tokens: 1,
+      }],
+    };
+    const wrongPrevHash = "f".repeat(32);
+    const { records } = cli._generateTurnLogRecords(turn, 0, sessionId, model, wrongPrevHash, null);
+    const llmRec = records.find(r => r["gen_ai.role"] === "assistant");
+    expect(llmRec["gen_ai.input_messages"]).toBeDefined();
+    expect(llmRec["gen_ai.input_messages_delta"]).toBeDefined();
+  });
+
+  test("no prompt — no user record generated", () => {
+    const turn = {
+      prompt: null,
+      startTime: 1000,
+      endTime: 1001,
+      events: [{
+        type: "llm_call",
+        timestamp: 1000.5,
+        input_messages: [{ role: "user", content: "something" }],
+        output_content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        input_tokens: 3,
+        output_tokens: 1,
+      }],
+    };
+    const { records } = cli._generateTurnLogRecords(turn, 0, sessionId, model, INITIAL_HASH, null);
+    expect(records.filter(r => r["gen_ai.role"] === "user")).toHaveLength(0);
+    expect(records.filter(r => r["gen_ai.role"] === "assistant")).toHaveLength(1);
+  });
+});

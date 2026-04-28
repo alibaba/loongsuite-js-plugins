@@ -16,6 +16,8 @@ Trace 数据完全遵循 [ARMS GenAI 语义规范](../arms/semantic-conventions/
 - **语义方言支持**：自动检测 Sunfire 端点，切换 `gen_ai.span_kind_name`（ALIBABA_GROUP）/ `gen_ai.span.kind`（默认）属性名
 - **原子状态写入**：基于 `rename` 的原子文件写入，防止并发 hook 进程读取到半写文件
 - **自动 alias 注入**：安装后 `claude` 命令自动携带 `NODE_OPTIONS=--require intercept.js`，无需手动配置
+- **配置文件支持**：可通过 `~/.claude/otel-config.json` 配置所有 OTLP 参数，优先于环境变量，避免与本地其他 OTel 工具冲突
+- **JSONL 日志采集**：可选的本地日志功能，支持 chain hash 增量校验和每日文件轮转，与 trace 数据关联
 - **一键安装**：`npm install -g` 后 postinstall 自动完成全部配置，或 `bash scripts/install.sh` 源码安装
 
 ---
@@ -92,7 +94,41 @@ bash scripts/install.sh
 
 ## 配置说明
 
-所有配置通过**环境变量**完成，无需配置文件。
+支持两种配置方式：**配置文件**和**环境变量**。配置文件优先于环境变量，适用于本地有其他 OTel 工具使用相同环境变量的场景。
+
+### 方式一：配置文件（推荐）
+
+创建 `~/.claude/otel-config.json`：
+
+```json
+{
+  "otlp_endpoint": "https://your-otlp-endpoint:4318",
+  "otlp_headers": "x-api-key=abc123,x-other=val",
+  "service_name": "my-claude-agent",
+  "resource_attributes": "env=prod,team=infra",
+  "debug": false,
+  "semconv_dialect": "",
+  "log_enabled": false,
+  "log_dir": ""
+}
+```
+
+所有字段均为可选，未设置的字段回退到对应的环境变量，再回退到默认值。
+
+**优先级：配置文件 > 环境变量 > 默认值**
+
+| 配置文件字段 | 对应环境变量 | 说明 | 默认值 |
+|---|---|---|---|
+| `otlp_endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP 导出端点 | —（必填，或启用 debug） |
+| `otlp_headers` | `OTEL_EXPORTER_OTLP_HEADERS` | 导出请求头，逗号分隔 `key=value` | — |
+| `service_name` | `OTEL_SERVICE_NAME` | Trace 中的 service name | `claude-agents` |
+| `resource_attributes` | `OTEL_RESOURCE_ATTRIBUTES` | 附加资源属性 | — |
+| `debug` | `CLAUDE_TELEMETRY_DEBUG` | 启用 Console 输出（调试用） | `false` |
+| `semconv_dialect` | `LOONGSUITE_SEMCONV_DIALECT_NAME` | 语义规范方言 | 自动检测 |
+| `log_enabled` | `OTEL_CLAUDE_LOG_ENABLED` | 启用 JSONL 日志采集 | `false` |
+| `log_dir` | `OTEL_CLAUDE_LOG_DIR` | JSONL 日志目录 | `~/.loongcollector/data/` |
+
+### 方式二：环境变量
 
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
@@ -106,8 +142,20 @@ bash scripts/install.sh
 | `OTEL_CLAUDE_HOOK_CMD` | 自定义 hook 命令名称 | `otel-claude-hook` |
 | `OTEL_CLAUDE_LANG` | 强制指定语言（`zh` 或 `en`），不设则自动检测 `$LANGUAGE`、`$LC_ALL`、`$LANG` | 自动检测 |
 | `LOONGSUITE_SEMCONV_DIALECT_NAME` | 语义规范方言：`ALIBABA_GROUP` 使用 `gen_ai.span_kind_name`，默认使用 `gen_ai.span.kind` | 自动检测 |
+| `OTEL_CLAUDE_LOG_ENABLED` | 设为 `1` 启用 JSONL 日志采集 | — |
+| `OTEL_CLAUDE_LOG_DIR` | JSONL 日志文件目录 | `~/.loongcollector/data/` |
 
-### 示例：接入 Honeycomb
+### 示例：配置文件接入 Honeycomb
+
+```json
+{
+  "otlp_endpoint": "https://api.honeycomb.io",
+  "otlp_headers": "x-honeycomb-team=<your-api-key>",
+  "resource_attributes": "service.name=my-claude-agent,env=production"
+}
+```
+
+### 示例：环境变量接入 Honeycomb
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://api.honeycomb.io"
@@ -119,6 +167,14 @@ export OTEL_RESOURCE_ATTRIBUTES="service.name=my-claude-agent,env=production"
 
 ```bash
 export CLAUDE_TELEMETRY_DEBUG=1
+```
+
+或在配置文件中：
+
+```json
+{
+  "debug": true
+}
 ```
 
 ---
@@ -264,6 +320,8 @@ opentelemetry-instrumentation-claude/
 ├── src/
 │   ├── index.js                     # 包入口，导出核心 API
 │   ├── cli.js                       # hook 命令实现 + replayEventsAsSpans + exportSessionTrace
+│   ├── config.js                    # 配置加载（~/.claude/otel-config.json + 环境变量 + 默认值）
+│   ├── logger.js                    # JSONL 日志采集（chain hash + 每日文件轮转）
 │   ├── message-converter.js         # LLM 消息格式转换（Anthropic/OpenAI → ARMS 语义规范）
 │   ├── state.js                     # session 状态文件读写（原子写入）
 │   ├── telemetry.js                 # OTel TracerProvider 配置（OTLP/HTTP + Console）
@@ -276,6 +334,8 @@ opentelemetry-instrumentation-claude/
 │   └── uninstall.sh                 # 卸载脚本
 └── test/
     ├── cli.test.js                  # CLI + replayEventsAsSpans + exportSessionTrace 测试
+    ├── config.test.js               # 配置文件加载、优先级、缺失文件兜底测试
+    ├── logger.test.js               # JSONL 日志、chain hash、文件轮转测试
     ├── message-converter.test.js    # 消息格式转换测试（3 协议 × 多场景）
     ├── hooks.test.js                # hooks 工具函数测试
     ├── state.test.js                # 状态文件读写测试
@@ -287,7 +347,9 @@ opentelemetry-instrumentation-claude/
 
 ## 工作原理
 
-1. **hook 命令注册**：`otel-claude-hook install` 将 8 个 hook 命令写入 `~/.claude/settings.json`。Claude Code 在每个生命周期事件时以子进程方式调用对应命令，并将事件 JSON 通过 stdin 传入。
+1. **配置加载**：`config.js` 在首次访问时读取 `~/.claude/otel-config.json`（如存在），并缓存在内存中。后续所有模块（telemetry、cli、logger）通过 config 模块获取配置，遵循 **配置文件 > 环境变量 > 默认值** 的优先级。
+
+2. **hook 命令注册**：`otel-claude-hook install` 将 8 个 hook 命令写入 `~/.claude/settings.json`。Claude Code 在每个生命周期事件时以子进程方式调用对应命令，并将事件 JSON 通过 stdin 传入。
 
 2. **状态持久化**：每个 session 的事件序列存储在：
    ```
@@ -318,6 +380,11 @@ opentelemetry-instrumentation-claude/
    - 嵌套 Subagent 递归处理子事件流
    - 导出成功后清空已导出事件，避免下轮重复导出
    - 执行 `forceFlush` + `shutdown` 确保数据发送完毕
+
+6. **JSONL 日志采集**（可选）：当 `log_enabled=true` 时，`logger.js` 在 trace 导出完成后将每轮对话的详细记录写入本地 JSONL 文件：
+   - 文件路径：`<log_dir>/claude-code.jsonl.YYYYMMDD`，按天自动轮转
+   - 每条记录包含 `trace_id`（与 OTel trace 关联）、session/turn/step 标识、token 用量、消息内容
+   - **Chain hash 增量校验**：使用 `H_n = sha256(H_{n-1} + serialize(msg_n))` 算法检测消息是否被上下文压缩修改。仅在 hash 不匹配时记录完整 `input_messages`，正常情况下只记录增量 `delta`，大幅节省存储
 
 ---
 

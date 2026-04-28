@@ -61,4 +61,56 @@ describe("telemetry", () => {
     telemetry = require("../src/telemetry");
     expect(telemetry.resolveServiceName()).toBe("claude-agents");
   });
+
+  test("parseResourceAttributes parses all key=value pairs", () => {
+    process.env.OTEL_RESOURCE_ATTRIBUTES =
+      "service.name=cc-test,acs.cms.workspace=ximing,benchmark.instance_id=autojump";
+    telemetry = require("../src/telemetry");
+    const attrs = telemetry.parseResourceAttributes();
+    expect(attrs).toEqual({
+      "service.name": "cc-test",
+      "acs.cms.workspace": "ximing",
+      "benchmark.instance_id": "autojump",
+    });
+    delete process.env.OTEL_RESOURCE_ATTRIBUTES;
+  });
+
+  test("parseResourceAttributes returns empty object when unset", () => {
+    delete process.env.OTEL_RESOURCE_ATTRIBUTES;
+    telemetry = require("../src/telemetry");
+    expect(telemetry.parseResourceAttributes()).toEqual({});
+  });
+
+  test("parseResourceAttributes handles values with = signs", () => {
+    process.env.OTEL_RESOURCE_ATTRIBUTES = "key=val=ue,other=ok";
+    telemetry = require("../src/telemetry");
+    const attrs = telemetry.parseResourceAttributes();
+    expect(attrs["key"]).toBe("val=ue");
+    expect(attrs["other"]).toBe("ok");
+    delete process.env.OTEL_RESOURCE_ATTRIBUTES;
+  });
+
+  test("buildResourceAttrs includes all env attrs plus resolved service.name", () => {
+    process.env.OTEL_SERVICE_NAME = "my-svc";
+    process.env.OTEL_RESOURCE_ATTRIBUTES =
+      "acs.cms.workspace=test-ws,benchmark.model.name=claude-4";
+    telemetry = require("../src/telemetry");
+    const attrs = telemetry.buildResourceAttrs();
+    expect(attrs["service.name"]).toBe("my-svc");
+    expect(attrs["acs.cms.workspace"]).toBe("test-ws");
+    expect(attrs["benchmark.model.name"]).toBe("claude-4");
+    delete process.env.OTEL_SERVICE_NAME;
+    delete process.env.OTEL_RESOURCE_ATTRIBUTES;
+  });
+
+  test("buildResourceAttrs: OTEL_SERVICE_NAME overrides service.name in OTEL_RESOURCE_ATTRIBUTES", () => {
+    process.env.OTEL_SERVICE_NAME = "override-name";
+    process.env.OTEL_RESOURCE_ATTRIBUTES = "service.name=from-attrs,custom=val";
+    telemetry = require("../src/telemetry");
+    const attrs = telemetry.buildResourceAttrs();
+    expect(attrs["service.name"]).toBe("override-name");
+    expect(attrs["custom"]).toBe("val");
+    delete process.env.OTEL_SERVICE_NAME;
+    delete process.env.OTEL_RESOURCE_ATTRIBUTES;
+  });
 });
