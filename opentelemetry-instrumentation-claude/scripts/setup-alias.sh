@@ -11,7 +11,7 @@ INTERCEPT_PATH="$HOME/.cache/opentelemetry.instrumentation.claude/intercept.js"
 # If claude_identity is set at invocation time, it takes priority over OTEL_SERVICE_NAME.
 # The alias uses a shell substitution so the check happens each time claude is run,
 # not at install time — no code changes required.
-ALIAS_LINE="alias claude='CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta OTEL_SERVICE_NAME=\"\${claude_identity:-\${OTEL_SERVICE_NAME:-}}\" NODE_OPTIONS=\"--require $INTERCEPT_PATH\" npx -y @anthropic-ai/claude-code@2.1.112'"
+ALIAS_LINE="alias claude='CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_METRIC_EXPORT_INTERVAL=20000 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=delta OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY OTEL_SERVICE_NAME=\"\${claude_identity:-\${OTEL_SERVICE_NAME:-}}\" NODE_OPTIONS=\"--require $INTERCEPT_PATH\" npx -y @anthropic-ai/claude-code@2.1.112'"
 
 # ---------------------------------------------------------------------------
 # 语言检测 / Language detection
