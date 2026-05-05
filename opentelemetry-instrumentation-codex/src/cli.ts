@@ -242,6 +242,8 @@ function buildHooksToml(): string {
   for (const event of HOOK_EVENTS) {
     const sub = EVENT_TO_SUBCOMMAND[event]!;
     lines.push(`[[hooks.${event}]]`);
+    lines.push("");
+    lines.push(`[[hooks.${event}.hooks]]`);
     lines.push(`type = "command"`);
     lines.push(`command = "otel-codex-hook ${sub}"`);
     lines.push("");
@@ -253,57 +255,184 @@ function buildHooksJson(): Record<string, unknown> {
   const hooks: Record<string, unknown[]> = {};
   for (const event of HOOK_EVENTS) {
     const sub = EVENT_TO_SUBCOMMAND[event]!;
-    hooks[event] = [{ type: "command", command: `otel-codex-hook ${sub}` }];
+    hooks[event] = [
+      { hooks: [{ type: "command", command: `otel-codex-hook ${sub}` }] },
+    ];
   }
   return { hooks };
+}
+
+function ensureCodexHooksFeature(configPath: string): void {
+  let content = "";
+  if (fs.existsSync(configPath)) {
+    content = fs.readFileSync(configPath, "utf-8");
+  }
+  if (content.includes("codex_hooks")) return;
+
+  const featuresMatch = content.match(/^\[features\]\s*$/m);
+  if (featuresMatch && featuresMatch.index !== undefined) {
+    const insertPos = featuresMatch.index + featuresMatch[0].length;
+    content =
+      content.slice(0, insertPos) +
+      "\ncodex_hooks = true" +
+      content.slice(insertPos);
+  } else {
+    const separator = content.endsWith("\n") || !content ? "" : "\n";
+    content += separator + "\n[features]\ncodex_hooks = true\n";
+  }
+  fs.writeFileSync(configPath, content, "utf-8");
+}
+
+function removeLegacyTomlHooks(configPath: string): void {
+  if (!fs.existsSync(configPath)) return;
+  let content = fs.readFileSync(configPath, "utf-8");
+  if (!content.includes("otel-codex-hook")) return;
+
+  const marker = "# OpenTelemetry instrumentation hooks";
+  const markerIdx = content.indexOf(marker);
+  if (markerIdx !== -1) {
+    const endStr = 'command = "otel-codex-hook stop"';
+    const endIdx = content.indexOf(endStr, markerIdx);
+    if (endIdx !== -1) {
+      let cutEnd = endIdx + endStr.length;
+      while (
+        cutEnd < content.length &&
+        (content[cutEnd] === "\n" ||
+          content[cutEnd] === "\r" ||
+          content[cutEnd] === " ")
+      ) {
+        cutEnd++;
+      }
+      content = content.slice(0, markerIdx) + content.slice(cutEnd);
+    } else {
+      content = content
+        .split("\n")
+        .filter((l) => !l.includes("otel-codex-hook"))
+        .join("\n");
+    }
+  } else {
+    content = content
+      .split("\n")
+      .filter((l) => !l.includes("otel-codex-hook"))
+      .join("\n");
+  }
+
+  content = content.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+  fs.writeFileSync(configPath, content, "utf-8");
 }
 
 export async function cmdInstall(opts: {
   quiet?: boolean;
 }): Promise<void> {
   const home = codexHome();
+  const hooksJsonPath = path.join(home, "hooks.json");
   const configPath = path.join(home, "config.toml");
-
-  process.stderr.write(`[otel-codex-hook] Installing hooks to ${configPath}\n`);
 
   fs.mkdirSync(home, { recursive: true });
 
-  let existing = "";
-  if (fs.existsSync(configPath)) {
-    existing = fs.readFileSync(configPath, "utf-8");
-  }
-
-  if (existing.includes("otel-codex-hook")) {
-    process.stderr.write("[otel-codex-hook] Hooks already installed, skipping.\n");
-    return;
-  }
-
-  const hooksSection = buildHooksToml();
-  const separator = existing.endsWith("\n") || !existing ? "" : "\n";
-  let newContent = existing + separator + "\n# OpenTelemetry instrumentation hooks\n" + hooksSection;
-
-  if (!newContent.includes("codex_hooks")) {
-    const featuresMatch = newContent.match(/^\[features\]\s*$/m);
-    if (featuresMatch && featuresMatch.index !== undefined) {
-      const insertPos = featuresMatch.index + featuresMatch[0].length;
-      newContent =
-        newContent.slice(0, insertPos) +
-        "\ncodex_hooks = true" +
-        newContent.slice(insertPos);
-    } else {
-      newContent += "\n[features]\ncodex_hooks = true\n";
+  if (fs.existsSync(hooksJsonPath)) {
+    const existing = fs.readFileSync(hooksJsonPath, "utf-8");
+    if (existing.includes("otel-codex-hook")) {
+      process.stderr.write(
+        "[otel-codex-hook] Hooks already in hooks.json, skipping.\n",
+      );
+      ensureCodexHooksFeature(configPath);
+      removeLegacyTomlHooks(configPath);
+      return;
     }
   }
 
-  fs.writeFileSync(configPath, newContent, "utf-8");
+  const hooksData = buildHooksJson();
+
+  if (fs.existsSync(hooksJsonPath)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(hooksJsonPath, "utf-8"));
+      if (existing && typeof existing === "object" && existing.hooks) {
+        for (const [event, handlers] of Object.entries(
+          hooksData.hooks as Record<string, unknown[]>,
+        )) {
+          if (!existing.hooks[event]) {
+            existing.hooks[event] = handlers;
+          } else {
+            (existing.hooks[event] as unknown[]).push(...handlers);
+          }
+        }
+        hooksData.hooks = existing.hooks;
+      }
+    } catch {}
+  }
+
+  fs.writeFileSync(
+    hooksJsonPath,
+    JSON.stringify(hooksData, null, 2) + "\n",
+    "utf-8",
+  );
+  process.stderr.write(
+    `[otel-codex-hook] Hooks written to ${hooksJsonPath}\n`,
+  );
+
+  ensureCodexHooksFeature(configPath);
+  removeLegacyTomlHooks(configPath);
+
   process.stderr.write("[otel-codex-hook] Hooks installed successfully.\n");
+}
+
+function removeHooksJsonEntries(hooksJsonPath: string): void {
+  if (!fs.existsSync(hooksJsonPath)) return;
+  const raw = fs.readFileSync(hooksJsonPath, "utf-8");
+  if (!raw.includes("otel-codex-hook")) return;
+
+  try {
+    const data = JSON.parse(raw);
+    if (!data?.hooks) return;
+
+    for (const event of Object.keys(data.hooks)) {
+      data.hooks[event] = (data.hooks[event] as unknown[]).filter(
+        (group: any) => {
+          if (!group.hooks) return true;
+          group.hooks = group.hooks.filter(
+            (h: any) =>
+              !(
+                typeof h.command === "string" &&
+                h.command.includes("otel-codex-hook")
+              ),
+          );
+          return group.hooks.length > 0;
+        },
+      );
+      if (data.hooks[event].length === 0) delete data.hooks[event];
+    }
+
+    if (Object.keys(data.hooks).length === 0) {
+      fs.unlinkSync(hooksJsonPath);
+      process.stderr.write(
+        "[otel-codex-hook] hooks.json removed (empty after cleanup).\n",
+      );
+    } else {
+      fs.writeFileSync(
+        hooksJsonPath,
+        JSON.stringify(data, null, 2) + "\n",
+        "utf-8",
+      );
+      process.stderr.write(
+        "[otel-codex-hook] otel-codex-hook entries removed from hooks.json.\n",
+      );
+    }
+  } catch {
+    process.stderr.write(
+      "[otel-codex-hook] Warning: failed to parse hooks.json.\n",
+    );
+  }
 }
 
 export function cmdUninstall(opts: {
   purge?: boolean;
 }): void {
   const home = codexHome();
+  const hooksJsonPath = path.join(home, "hooks.json");
   const configPath = path.join(home, "config.toml");
+
+  removeHooksJsonEntries(hooksJsonPath);
 
   if (fs.existsSync(configPath)) {
     let content = fs.readFileSync(configPath, "utf-8");

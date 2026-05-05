@@ -57,6 +57,44 @@ msg "==============================" \
     "=============================="
 echo ""
 
+# 0. Clean up ~/.codex/hooks.json
+HOOKS_JSON="$HOME/.codex/hooks.json"
+msg "==> 清理 hooks.json ($HOOKS_JSON)..." \
+    "==> Cleaning up hooks.json ($HOOKS_JSON)..."
+if [ -f "$HOOKS_JSON" ] && grep -q "otel-codex-hook" "$HOOKS_JSON" 2>/dev/null; then
+    if command -v node >/dev/null 2>&1; then
+        node -e "
+const fs = require('fs');
+const f = process.argv[1];
+try {
+  const d = JSON.parse(fs.readFileSync(f, 'utf-8'));
+  if (d && d.hooks) {
+    for (const ev of Object.keys(d.hooks)) {
+      d.hooks[ev] = d.hooks[ev].filter(g => {
+        if (!g.hooks) return true;
+        g.hooks = g.hooks.filter(h => !(h.command && h.command.includes('otel-codex-hook')));
+        return g.hooks.length > 0;
+      });
+      if (d.hooks[ev].length === 0) delete d.hooks[ev];
+    }
+    if (Object.keys(d.hooks).length === 0) {
+      fs.unlinkSync(f);
+    } else {
+      fs.writeFileSync(f, JSON.stringify(d, null, 2) + '\n');
+    }
+  }
+} catch {}
+" "$HOOKS_JSON"
+        msg "    ✅ hooks.json 已清理" "    ✅ hooks.json cleaned"
+    else
+        msg "    ⚠️  Node.js 不可用，请手动编辑 $HOOKS_JSON" \
+            "    ⚠️  Node.js not available, please manually edit $HOOKS_JSON"
+    fi
+else
+    msg "    ℹ️  hooks.json 无需清理" "    ℹ️  hooks.json: nothing to clean"
+fi
+echo ""
+
 # 1. Clean up ~/.codex/config.toml
 msg "==> 清理 hooks 配置 ($CONFIG_FILE)..." \
     "==> Cleaning up hooks config ($CONFIG_FILE)..."
