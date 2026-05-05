@@ -231,19 +231,24 @@ otel-codex-hook show-config         # 打印 hook 配置（TOML/JSON 格式）
 ```toml
 # OpenTelemetry instrumentation hooks
 [[hooks.SessionStart]]
-hooks = [{ type = "command", command = "otel-codex-hook session-start" }]
+type = "command"
+command = "otel-codex-hook session-start"
 
 [[hooks.UserPromptSubmit]]
-hooks = [{ type = "command", command = "otel-codex-hook user-prompt-submit" }]
+type = "command"
+command = "otel-codex-hook user-prompt-submit"
 
 [[hooks.PreToolUse]]
-hooks = [{ type = "command", command = "otel-codex-hook pre-tool-use" }]
+type = "command"
+command = "otel-codex-hook pre-tool-use"
 
 [[hooks.PostToolUse]]
-hooks = [{ type = "command", command = "otel-codex-hook post-tool-use" }]
+type = "command"
+command = "otel-codex-hook post-tool-use"
 
 [[hooks.Stop]]
-hooks = [{ type = "command", command = "otel-codex-hook stop" }]
+type = "command"
+command = "otel-codex-hook stop"
 ```
 
 ---

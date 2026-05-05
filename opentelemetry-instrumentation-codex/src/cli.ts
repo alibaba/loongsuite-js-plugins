@@ -242,9 +242,8 @@ function buildHooksToml(): string {
   for (const event of HOOK_EVENTS) {
     const sub = EVENT_TO_SUBCOMMAND[event]!;
     lines.push(`[[hooks.${event}]]`);
-    lines.push(
-      `hooks = [{ type = "command", command = "otel-codex-hook ${sub}" }]`,
-    );
+    lines.push(`type = "command"`);
+    lines.push(`command = "otel-codex-hook ${sub}"`);
     lines.push("");
   }
   return lines.join("\n");
@@ -254,11 +253,7 @@ function buildHooksJson(): Record<string, unknown> {
   const hooks: Record<string, unknown[]> = {};
   for (const event of HOOK_EVENTS) {
     const sub = EVENT_TO_SUBCOMMAND[event]!;
-    const handler: Record<string, unknown> = {
-      type: "command",
-      command: `otel-codex-hook ${sub}`,
-    };
-    hooks[event] = [{ hooks: [handler] }];
+    hooks[event] = [{ type: "command", command: `otel-codex-hook ${sub}` }];
   }
   return { hooks };
 }
