@@ -31,8 +31,7 @@ export function generateTurnLogRecords(
     "session.id": sessionId,
     "turn.id": turnId,
     "user.id": userId,
-    "agent.type": "codex-cli-hook",
-    "agent.name": "codex",
+    "agent.type": "codex",
   };
 
   if (turn.prompt) {
