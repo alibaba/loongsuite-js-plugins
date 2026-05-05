@@ -731,7 +731,6 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
     "turn.id": turnId,
     "user.id": userId,
     "agent.type": "claude-code",
-    "agent.name": "claude-code",
   };
 
   if (turn.prompt) {
