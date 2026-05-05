@@ -5,8 +5,9 @@
 # Steps:
 #   1. 从 ~/.claude/settings.json 删除 otel-claude-hook 相关 hook + enableTelemetry
 #   2. 删除 ~/.cache/opentelemetry.instrumentation.claude/intercept.js
-#   3. 从 shell profile 删除 claude alias 及注释行
-#   4. 打印卸载结果
+#   3. npm uninstall -g otel-claude-hook
+#   4. 从 shell profile 删除 claude alias 及注释行
+#   5. 打印卸载结果
 
 set -euo pipefail
 
@@ -138,7 +139,20 @@ else
 fi
 echo ""
 
-# 3. 从 shell profile 删除 claude alias 及注释行
+# 3. 清理全局 npm 包
+msg "==> 清理全局 npm 包..." \
+    "==> Cleaning up global npm package..."
+if npm ls -g otel-claude-hook &>/dev/null; then
+    npm uninstall -g otel-claude-hook 2>/dev/null || true
+    msg "    ✅ npm uninstall -g otel-claude-hook" \
+        "    ✅ npm uninstall -g otel-claude-hook"
+else
+    msg "    ℹ️  未找到全局 npm 包，跳过" \
+        "    ℹ️  No global npm package found, skipping"
+fi
+echo ""
+
+# 4. 从 shell profile 删除 claude alias 及注释行
 msg "==> 正在清理 shell 别名..." \
     "==> Cleaning up shell alias..."
 
@@ -181,7 +195,7 @@ remove_env_block_from_file "$HOME/.zshrc"        || true
 remove_env_block_from_file "$HOME/.bash_profile" || true
 echo ""
 
-# 4. 完成
+# 5. 完成
 msg "==============================" \
     "=============================="
 msg " ✅ 卸载完成！" \

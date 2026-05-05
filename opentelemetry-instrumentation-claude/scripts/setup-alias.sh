@@ -65,20 +65,29 @@ add_alias_to_file() {
     if [ ! -f "$file" ]; then
         return
     fi
+    if [ ! -w "$file" ]; then
+        msg "  ↳ $file 不可写，跳过" \
+            "  ↳ $file is not writable, skipping"
+        return
+    fi
     if grep -q "# BEGIN otel-claude-hook" "$file" 2>/dev/null; then
         msg "  ↳ 已存在于 $file" \
             "  ↳ Already present in $file"
         return
     fi
-    cat >> "$file" << ALIAS_BLOCK
-
+    if cat >> "$file" << ALIAS_BLOCK
 # BEGIN otel-claude-hook
 $ALIAS_LINE
 # END otel-claude-hook
 ALIAS_BLOCK
-    msg "  ✅ 已添加别名到 $file" \
-        "  ✅ Added alias to $file"
-    ADDED=1
+    then
+        msg "  ✅ 已添加别名到 $file" \
+            "  ✅ Added alias to $file"
+        ADDED=1
+    else
+        msg "  ↳ 写入 $file 失败，跳过" \
+            "  ↳ Failed to write $file, skipping"
+    fi
 }
 
 msg "==> 正在设置 claude 别名..." \
