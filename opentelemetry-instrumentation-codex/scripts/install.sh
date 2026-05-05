@@ -162,6 +162,8 @@ echo ""
 
 msg "2. 正常使用 codex，Trace 将自动上报。" \
     "2. Use codex as normal — traces will appear in your backend automatically."
+msg "   如果正在使用 Codex 桌面版，请重启 App 以使 hooks 生效。" \
+    "   If using Codex Desktop, restart the app for hooks to take effect."
 echo ""
 
 msg "提示：" \
