@@ -307,21 +307,70 @@ export function cmdUninstall(opts: {
 
   if (fs.existsSync(configPath)) {
     let content = fs.readFileSync(configPath, "utf-8");
+    let changed = false;
+
+    // Step 1: Remove hooks block (from marker to last otel-codex-hook line)
     const marker = "# OpenTelemetry instrumentation hooks";
-    const idx = content.indexOf(marker);
-    if (idx !== -1) {
-      content = content.slice(0, idx).trimEnd() + "\n";
-      fs.writeFileSync(configPath, content, "utf-8");
-      process.stderr.write("[otel-codex-hook] Hooks removed from config.toml.\n");
+    const markerIdx = content.indexOf(marker);
+    if (markerIdx !== -1) {
+      const endStr = 'command = "otel-codex-hook stop"';
+      const endIdx = content.indexOf(endStr, markerIdx);
+      if (endIdx !== -1) {
+        let cutEnd = endIdx + endStr.length;
+        // consume trailing whitespace/newlines after the last hook line
+        while (cutEnd < content.length && (content[cutEnd] === "\n" || content[cutEnd] === "\r" || content[cutEnd] === " ")) {
+          cutEnd++;
+        }
+        content = content.slice(0, markerIdx) + content.slice(cutEnd);
+      } else {
+        // end marker not found — fallback: remove lines containing otel-codex-hook
+        const lines = content.split("\n");
+        content = lines.filter((l) => !l.includes("otel-codex-hook")).join("\n");
+      }
+      changed = true;
     } else {
+      // no marker comment — fallback: remove lines containing otel-codex-hook
       const lines = content.split("\n");
       const filtered = lines.filter((l) => !l.includes("otel-codex-hook"));
       if (filtered.length !== lines.length) {
-        fs.writeFileSync(configPath, filtered.join("\n"), "utf-8");
-        process.stderr.write("[otel-codex-hook] Hook entries removed.\n");
-      } else {
-        process.stderr.write("[otel-codex-hook] No hooks found to remove.\n");
+        content = filtered.join("\n");
+        changed = true;
       }
+    }
+
+    // Step 2: Remove codex_hooks = true
+    if (content.includes("codex_hooks")) {
+      const lines = content.split("\n");
+      const filtered = lines.filter((l) => !/^\s*codex_hooks\s*=/.test(l));
+      // If [features] section is now empty, remove it too
+      const cleaned: string[] = [];
+      for (let i = 0; i < filtered.length; i++) {
+        const line = filtered[i]!;
+        if (/^\[features\]\s*$/.test(line)) {
+          // check if next non-empty line is another section header or EOF
+          let j = i + 1;
+          while (j < filtered.length && filtered[j]!.trim() === "") j++;
+          if (j >= filtered.length || /^\[/.test(filtered[j]!)) {
+            // [features] is empty — skip it and any trailing blank lines
+            i = j - 1;
+            continue;
+          }
+        }
+        cleaned.push(line);
+      }
+      if (cleaned.length !== lines.length) {
+        content = cleaned.join("\n");
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      // clean up multiple consecutive blank lines
+      content = content.replace(/\n{3,}/g, "\n\n").trimEnd() + "\n";
+      fs.writeFileSync(configPath, content, "utf-8");
+      process.stderr.write("[otel-codex-hook] Hooks removed from config.toml.\n");
+    } else {
+      process.stderr.write("[otel-codex-hook] No hooks found to remove.\n");
     }
   }
 
