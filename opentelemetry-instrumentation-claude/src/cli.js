@@ -1110,6 +1110,10 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
 // stdin helper
 // ---------------------------------------------------------------------------
 
+function isCursorCaller(event) {
+  return !!event.cursor_version;
+}
+
 function readStdinJson() {
   try {
     // Read stdin synchronously. Claude Code sends hook data as JSON on stdin.
@@ -1202,6 +1206,7 @@ function installIntoSettings(settingsPath, entryPath) {
 
 function cmdUserPromptSubmit() {
   const event = readStdinJson();
+  if (isCursorCaller(event)) return;
   const sessionId = event.session_id || require("crypto").randomUUID();
   const prompt = event.prompt || "";
 
@@ -1221,6 +1226,7 @@ function cmdUserPromptSubmit() {
 
 function cmdPreToolUse() {
   const event = readStdinJson();
+  if (isCursorCaller(event)) return;
   const sessionId = event.session_id || require("crypto").randomUUID();
   const toolName = event.tool_name || "unknown";
   const toolInput = event.tool_input || {};
@@ -1246,6 +1252,7 @@ function cmdPreToolUse() {
 
 function cmdPostToolUse() {
   const event = readStdinJson();
+  if (isCursorCaller(event)) return;
   const sessionId = event.session_id || require("crypto").randomUUID();
 
   const state = loadState(sessionId);
@@ -1262,6 +1269,7 @@ function cmdPostToolUse() {
 
 function cmdPreCompact() {
   const event = readStdinJson();
+  if (isCursorCaller(event)) return;
   const sessionId = event.session_id || require("crypto").randomUUID();
 
   const state = loadState(sessionId);
@@ -1276,6 +1284,7 @@ function cmdPreCompact() {
 
 function cmdSubagentStart() {
   const event = readStdinJson();
+  if (isCursorCaller(event)) return;
   const sessionId = event.session_id || require("crypto").randomUUID();
 
   const state = loadState(sessionId);
@@ -1291,6 +1300,7 @@ function cmdSubagentStart() {
 
 function cmdSubagentStop() {
   const event = readStdinJson();
+  if (isCursorCaller(event)) return;
   const sessionId = event.session_id || require("crypto").randomUUID();
   const stopReason = event.stop_reason || "end_turn";
 
@@ -1327,6 +1337,7 @@ function cmdSubagentStop() {
 
 function cmdNotification() {
   const event = readStdinJson();
+  if (isCursorCaller(event)) return;
   const sessionId = event.session_id || require("crypto").randomUUID();
 
   const state = loadState(sessionId);
@@ -1342,6 +1353,7 @@ function cmdNotification() {
 
 async function cmdStop() {
   const event = readStdinJson();
+  if (isCursorCaller(event)) return;
   const sessionId = event.session_id || require("crypto").randomUUID();
   const stopReason = event.stop_reason || "end_turn";
 
