@@ -775,6 +775,7 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
   let stepRound = 0;
   let currentStepId = null;
   let runningHash = prevHash;
+  let prevInputMsgs = [];
 
   let userId;
   try { userId = os.userInfo().username; } catch { userId = ""; }
@@ -819,7 +820,7 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
       const inputMsgs = convertInputMessages(ev.input_messages, protocol);
       const currentFullHash = computeHash(INITIAL_HASH, inputMsgs);
 
-      const delta = inputMsgs;
+      const delta = inputMsgs.slice(prevInputMsgs.length);
       const logFull = shouldLogFullMessages(runningHash, delta, currentFullHash);
 
       const requestRecord = {
@@ -875,6 +876,7 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
 
       records.push(responseRecord);
       runningHash = currentFullHash;
+      prevInputMsgs = inputMsgs;
 
     } else if (ev.type === "post_tool_use") {
       const toolName = ev.tool_name || "unknown";
