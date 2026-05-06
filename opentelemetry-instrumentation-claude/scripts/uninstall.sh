@@ -80,7 +80,8 @@ if (settings.hooks && typeof settings.hooks === "object") {
     if (!Array.isArray(matchers)) continue;
     const filtered = matchers.map(matcher => {
       if (!Array.isArray(matcher.hooks)) return matcher;
-      const newHooks = matcher.hooks.filter(h => !h.command || !h.command.includes("otel-claude-hook"));
+      const isOurs = c => c.includes('otel-claude-hook') || c.includes('hook-entry.sh');
+    const newHooks = matcher.hooks.filter(h => !h.command || !isOurs(h.command));
       if (newHooks.length === matcher.hooks.length) return matcher;
       changed = true;
       return newHooks.length > 0 ? { ...matcher, hooks: newHooks } : null;
