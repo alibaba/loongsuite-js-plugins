@@ -376,29 +376,62 @@ const armsTracePlugin: OpenClawPlugin = {
     const resolvedConfig = mergeDefinedValues(legacyConfig || {}, pluginConfig);
     const endpoint = pluginConfig.endpoint as string | undefined;
     const endpointResolved = resolvedConfig.endpoint as string | undefined;
-    const headers = resolvedConfig.headers as Record<string, string> | undefined;
 
-    if (!endpoint && endpointResolved && legacyConfig) {
+    // Build headers: config file takes priority, fall back to env vars
+    const configHeaders = resolvedConfig.headers as Record<string, string> | undefined;
+    const headers: Record<string, string> = configHeaders ? { ...configHeaders } : {};
+    if (!headers["x-arms-license-key"] && process.env.ARMS_LICENSE_KEY) {
+      headers["x-arms-license-key"] = process.env.ARMS_LICENSE_KEY;
+    }
+    if (!headers["x-arms-project"] && process.env.ARMS_PROJECT) {
+      headers["x-arms-project"] = process.env.ARMS_PROJECT;
+    }
+    if (!headers["x-cms-workspace"] && process.env.ARMS_CMS_WORKSPACE) {
+      headers["x-cms-workspace"] = process.env.ARMS_CMS_WORKSPACE;
+    }
+
+    // Resolve endpoint: config > env > undefined
+    const finalEndpoint = endpointResolved || process.env.ARMS_OTLP_ENDPOINT || "";
+
+    if (!endpoint && finalEndpoint && legacyConfig) {
       api.logger.warn(
         `[ArmsTrace] Using legacy '${LEGACY_PLUGIN_ID}' configuration fallback. Please migrate to '${CANONICAL_PLUGIN_ID}'.`,
       );
     }
 
-    if (!endpointResolved) {
+    if (!finalEndpoint) {
       api.logger.error(
-        "[ArmsTrace] Missing required configuration: 'endpoint' must be provided",
+        "[ArmsTrace] Missing required configuration: 'endpoint' must be provided (config or ARMS_OTLP_ENDPOINT env)",
       );
       return;
     }
+
+    // Resolve remaining fields: config > env > default
+    const finalServiceName =
+      (resolvedConfig.serviceName as string) ||
+      process.env.ARMS_SERVICE_NAME ||
+      process.env.OTEL_SERVICE_NAME ||
+      "openclaw-agent";
+    const finalDebug =
+      (resolvedConfig.debug as boolean) ||
+      process.env.ARMS_TRACE_DEBUG === "true" ||
+      process.env.ARMS_TRACE_DEBUG === "1" ||
+      false;
+    const finalEnablePropagation =
+      (resolvedConfig.enableTracePropagation as boolean) ||
+      process.env.ARMS_ENABLE_TRACE_PROPAGATION === "true" ||
+      process.env.ARMS_ENABLE_TRACE_PROPAGATION === "1" ||
+      false;
+
     const config: ArmsTraceConfig = {
-      endpoint: endpointResolved,
-      headers: headers || {},
-      serviceName: (resolvedConfig.serviceName as string) || "openclaw-agent",
-      debug: (resolvedConfig.debug as boolean) || false,
+      endpoint: finalEndpoint,
+      headers,
+      serviceName: finalServiceName,
+      debug: finalDebug,
       batchSize: (resolvedConfig.batchSize as number) || 10,
       flushIntervalMs: (resolvedConfig.flushIntervalMs as number) || 5000,
       enabledHooks: resolvedConfig.enabledHooks as string[] | undefined,
-      enableTracePropagation: (resolvedConfig.enableTracePropagation as boolean) || false,
+      enableTracePropagation: finalEnablePropagation,
       propagationTargetUrls: resolvedConfig.propagationTargetUrls as string[] | undefined,
     };
 
