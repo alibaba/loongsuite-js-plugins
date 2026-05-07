@@ -1395,37 +1395,37 @@ const armsTracePlugin: OpenClawPlugin = {
           const now = Date.now();
           const role = "user";
 
+          // Extract trace context and custom attributes from message content
+          // for both user messages and agent-channel WebSocket messages.
+          // Content may embed <!--otel:{JSON}--> with traceparent and custom attrs.
+          ctx.userInput = event.content;
+          if (config.enableTracePropagation) {
+            const otelPayload = extractOtelFromContent(event.content);
+            if (otelPayload) {
+              if (otelPayload.spanContext) {
+                updatePropagationStore({
+                  remoteParentContext: trace.setSpanContext(ROOT_CONTEXT, otelPayload.spanContext),
+                });
+              }
+              if (otelPayload.customAttributes) {
+                ctx.customAttributes = otelPayload.customAttributes;
+              }
+              ctx.userInput = otelPayload.cleanContent;
+            }
+          }
+
           const isUserMessage = !rawChannelId.startsWith("agent/");
           if (isUserMessage) {
             lastUserChannelId = channelId;
             lastUserTraceContext = ctx;
             lastUserContextSetAt = Date.now();
-            ctx.userInput = event.content;
-
-            // WebSocket path: trace context and custom attributes may be
-            // embedded in message content as <!--otel:{JSON}-->.
-            // HTTP path is already handled by the server emit patch.
-            if (config.enableTracePropagation) {
-              const otelPayload = extractOtelFromContent(event.content);
-              if (otelPayload) {
-                if (otelPayload.spanContext) {
-                  updatePropagationStore({
-                    remoteParentContext: trace.setSpanContext(ROOT_CONTEXT, otelPayload.spanContext),
-                  });
-                }
-                if (otelPayload.customAttributes) {
-                  ctx.customAttributes = otelPayload.customAttributes;
-                }
-                ctx.userInput = otelPayload.cleanContent;
-              }
-            }
-
-            await ensureEntrySpan(ctx, channelId, {
-              userId: event.from || ((event.metadata as { senderId?: string } | undefined)?.senderId),
-              role,
-              from: event.from,
-            });
           }
+
+          await ensureEntrySpan(ctx, channelId, {
+            userId: event.from || ((event.metadata as { senderId?: string } | undefined)?.senderId),
+            role,
+            from: event.from,
+          });
 
         },
       );

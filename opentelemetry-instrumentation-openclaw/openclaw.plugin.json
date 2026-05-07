@@ -5,6 +5,10 @@
   "description": "Report OpenClaw AI agent execution traces to any OTLP-compatible backend via OpenTelemetry",
   "type": "plugin",
   "entry": "./dist/index.js",
+  "activation": {
+    "onStartup": true,
+    "onCapabilities": ["hook"]
+  },
   "configSchema": {
     "type": "object",
     "properties": {
