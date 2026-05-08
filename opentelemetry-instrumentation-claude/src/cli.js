@@ -1484,17 +1484,19 @@ async function cmdInstall(opts = {}) {
     }
 
     // 2. Set up shell alias via setup-alias.sh (if bash is available)
-    const setupAliasScript = path.join(__dirname, "..", "scripts", "setup-alias.sh");
-    if (fs.existsSync(setupAliasScript)) {
-      try {
-        const { execSync } = require("child_process");
-        execSync(`bash "${setupAliasScript}"`, { stdio: quiet ? "ignore" : "inherit" });
-      } catch (err) {
-        if (!quiet) {
-          console.error(installMsg(
-            `⚠️  alias 设置失败（非致命）: ${err.message}`,
-            `⚠️  alias setup failed (non-fatal): ${err.message}`
-          ));
+    if (opts.alias !== false) {
+      const setupAliasScript = path.join(__dirname, "..", "scripts", "setup-alias.sh");
+      if (fs.existsSync(setupAliasScript)) {
+        try {
+          const { execSync } = require("child_process");
+          execSync(`bash "${setupAliasScript}"`, { stdio: quiet ? "ignore" : "inherit" });
+        } catch (err) {
+          if (!quiet) {
+            console.error(installMsg(
+              `⚠️  alias 设置失败（非致命）: ${err.message}`,
+              `⚠️  alias setup failed (non-fatal): ${err.message}`
+            ));
+          }
         }
       }
     }

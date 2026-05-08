@@ -106,6 +106,7 @@ program
   .option("--no-user", "Skip user-level settings")
   .option("--project", "Install into project-level settings (.claude/settings.json)")
   .option("--quiet", "Silent mode: warn on error instead of exiting (for postinstall use)")
+  .option("--no-alias", "Skip shell alias setup (for managed installations like pilot)")
   .action(async (opts) => {
     try {
       await cmdInstall(opts);
