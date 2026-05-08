@@ -205,10 +205,25 @@ describe("isLogEnabled", () => {
 // ---------------------------------------------------------------------------
 describe("resolveLogDir", () => {
   const origEnv = process.env.OTEL_CLAUDE_LOG_DIR;
+  const config = require("../src/config");
+  let origReadFileSync;
+
+  beforeEach(() => {
+    config.resetConfigCache();
+    origReadFileSync = fs.readFileSync;
+    fs.readFileSync = function (p, ...args) {
+      if (typeof p === "string" && p.includes("otel-config.json")) {
+        throw new Error("ENOENT");
+      }
+      return origReadFileSync.call(this, p, ...args);
+    };
+  });
 
   afterEach(() => {
+    fs.readFileSync = origReadFileSync;
     if (origEnv === undefined) delete process.env.OTEL_CLAUDE_LOG_DIR;
     else process.env.OTEL_CLAUDE_LOG_DIR = origEnv;
+    config.resetConfigCache();
   });
 
   test("uses OTEL_CLAUDE_LOG_DIR when set", () => {
@@ -227,10 +242,25 @@ describe("resolveLogDir", () => {
 // ---------------------------------------------------------------------------
 describe("getLogFilePath", () => {
   const origEnv = process.env.OTEL_CLAUDE_LOG_DIR;
+  const config = require("../src/config");
+  let origReadFileSync;
+
+  beforeEach(() => {
+    config.resetConfigCache();
+    origReadFileSync = fs.readFileSync;
+    fs.readFileSync = function (p, ...args) {
+      if (typeof p === "string" && p.includes("otel-config.json")) {
+        throw new Error("ENOENT");
+      }
+      return origReadFileSync.call(this, p, ...args);
+    };
+  });
 
   afterEach(() => {
+    fs.readFileSync = origReadFileSync;
     if (origEnv === undefined) delete process.env.OTEL_CLAUDE_LOG_DIR;
     else process.env.OTEL_CLAUDE_LOG_DIR = origEnv;
+    config.resetConfigCache();
   });
 
   test("filename matches claude-code.jsonl.YYYYMMDD pattern", () => {
@@ -255,15 +285,27 @@ describe("getLogFilePath", () => {
 // ---------------------------------------------------------------------------
 describe("writeLogRecords", () => {
   let tmpDir;
+  const config = require("../src/config");
+  let origReadFileSync;
 
   beforeEach(() => {
+    config.resetConfigCache();
+    origReadFileSync = fs.readFileSync;
+    fs.readFileSync = function (p, ...args) {
+      if (typeof p === "string" && p.includes("otel-config.json")) {
+        throw new Error("ENOENT");
+      }
+      return origReadFileSync.call(this, p, ...args);
+    };
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "logger-test-"));
     process.env.OTEL_CLAUDE_LOG_DIR = tmpDir;
   });
 
   afterEach(() => {
+    fs.readFileSync = origReadFileSync;
     delete process.env.OTEL_CLAUDE_LOG_DIR;
     fs.rmSync(tmpDir, { recursive: true, force: true });
+    config.resetConfigCache();
   });
 
   test("writes records as JSONL", () => {

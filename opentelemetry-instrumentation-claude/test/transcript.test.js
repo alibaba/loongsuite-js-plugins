@@ -111,17 +111,17 @@ describe("parseClaudeTranscript", () => {
     const events = parseClaudeTranscript(p, 100, 200);
     expect(events).toHaveLength(2);
 
-    // First LLM call
+    // First LLM call — delta contains initial user message
+    expect(events[0]._input_is_delta).toBe(true);
     expect(events[0].input_messages).toHaveLength(1);
     expect(events[0].input_messages[0].role).toBe("user");
     expect(events[0].input_tokens).toBe(100);
     expect(events[0].stop_reason).toBe("tool_use");
 
-    // Second LLM call — cumulative input_messages
-    expect(events[1].input_messages).toHaveLength(3);
+    // Second LLM call — delta only (tool_result from user)
+    expect(events[1]._input_is_delta).toBe(true);
+    expect(events[1].input_messages).toHaveLength(1);
     expect(events[1].input_messages[0].role).toBe("user");
-    expect(events[1].input_messages[1].role).toBe("assistant");
-    expect(events[1].input_messages[2].role).toBe("user");
     expect(events[1].input_tokens).toBe(200);
     expect(events[1].stop_reason).toBe("end_turn");
   });

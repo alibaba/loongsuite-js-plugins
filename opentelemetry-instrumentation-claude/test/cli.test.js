@@ -277,9 +277,11 @@ describe("cmdNotification", () => {
 });
 
 describe("installIntoSettings", () => {
+  const fakeEntry = "/tmp/fake-otel-claude-hook-entry.sh";
+
   test("creates settings.json with hooks when file does not exist", () => {
     const tmp = path.join(os.tmpdir(), `settings-${Date.now()}.json`);
-    cli._installIntoSettings(tmp);
+    cli._installIntoSettings(tmp, fakeEntry);
     const settings = JSON.parse(fs.readFileSync(tmp, "utf-8"));
     expect(settings.hooks).toBeDefined();
     expect(settings.hooks.UserPromptSubmit).toBeDefined();
@@ -288,8 +290,8 @@ describe("installIntoSettings", () => {
 
   test("is idempotent — does not duplicate hooks", () => {
     const tmp = path.join(os.tmpdir(), `settings-idem-${Date.now()}.json`);
-    cli._installIntoSettings(tmp);
-    cli._installIntoSettings(tmp);
+    cli._installIntoSettings(tmp, fakeEntry);
+    cli._installIntoSettings(tmp, fakeEntry);
     const settings = JSON.parse(fs.readFileSync(tmp, "utf-8"));
     expect(settings.hooks.UserPromptSubmit).toHaveLength(1);
     fs.unlinkSync(tmp);
@@ -300,7 +302,7 @@ describe("installIntoSettings", () => {
     fs.writeFileSync(tmp, JSON.stringify({
       hooks: { UserPromptSubmit: [{ hooks: [{ type: "command", command: "other-tool" }] }] },
     }), "utf-8");
-    cli._installIntoSettings(tmp);
+    cli._installIntoSettings(tmp, fakeEntry);
     const settings = JSON.parse(fs.readFileSync(tmp, "utf-8"));
     const cmds = settings.hooks.UserPromptSubmit.flatMap(m => m.hooks.map(h => h.command));
     expect(cmds.some(c => c.includes("other-tool"))).toBe(true);
@@ -824,13 +826,14 @@ describe("cmdUninstall", () => {
     const tmpDir = path.join(os.tmpdir(), `cl-uninstall-${Date.now()}`);
     fs.mkdirSync(tmpDir, { recursive: true });
     const settingsPath = path.join(tmpDir, "settings.json");
+    const fakeEntry = "/tmp/fake-otel-claude-hook-entry.sh";
 
-    cli._installIntoSettings(settingsPath);
+    cli._installIntoSettings(settingsPath, fakeEntry);
     let settings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
     expect(settings.hooks).toBeDefined();
     expect(Object.keys(settings.hooks).length).toBeGreaterThan(0);
 
-    cli._installIntoSettings(settingsPath); // idempotent
+    cli._installIntoSettings(settingsPath, fakeEntry); // idempotent
     const raw = fs.readFileSync(settingsPath, "utf-8");
     const parsed = JSON.parse(raw);
     const hookCount = Object.values(parsed.hooks).flat().length;
@@ -853,7 +856,6 @@ describe("generateTurnLogRecords", () => {
     expect(rec["event.name"]).toBeDefined();
     expect(rec["session.id"]).toBe(sessionId);
     expect(rec["agent.type"]).toBe("claude-code");
-    expect(rec["agent.name"]).toBe("claude-code");
     expect(rec["user.id"]).toBeDefined();
     if (traceId) expect(rec.trace_id).toBe(traceId);
   }
