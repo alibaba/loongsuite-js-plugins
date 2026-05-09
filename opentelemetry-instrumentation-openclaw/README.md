@@ -184,6 +184,8 @@ export OTEL_RESOURCE_ATTRIBUTES="deployment.environment=production,k8s.namespace
 export OTEL_SPAN_ATTRIBUTES="biz.team=payment,biz.app=checkout"
 ```
 
+> **Note**: Environment variables must be visible to the gateway process. OpenClaw gateway defaults to daemon mode, which does not inherit the calling shell's environment. For local development/testing, use the config file approach above. Environment variables are suited for container deployments (Docker/K8s) where env is injected into the process directly.
+
 ### Attribute priority (low → high)
 
 1. `globalSpanAttributes` / `OTEL_SPAN_ATTRIBUTES` — global fixed attributes
