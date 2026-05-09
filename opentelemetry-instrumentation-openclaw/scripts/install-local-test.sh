@@ -16,10 +16,10 @@ DIAG_PLUGIN_NAME="diagnostics-otel"
 DEFAULT_PLUGIN_FILE="./release/opentelemetry-instrumentation-openclaw.tar.gz"
 
 # ── Defaults (can be overridden by CLI args) ──
-ENDPOINT="https://your-otlp-endpoint/apm/trace/opentelemetry"
-LICENSE_KEY="your-license-key"
-ARMS_PROJECT="your-arms-project"
-CMS_WORKSPACE="your-cms-workspace"
+ENDPOINT=""
+LICENSE_KEY=""
+ARMS_PROJECT=""
+CMS_WORKSPACE=""
 SERVICE_NAME="openclaw-cms"
 PLUGIN_FILE="${DEFAULT_PLUGIN_FILE}"
 INSTALL_DIR=""
@@ -247,6 +247,9 @@ if (armsProject) pluginHeaders['x-arms-project'] = armsProject;
 if (cmsWorkspace) pluginHeaders['x-cms-workspace'] = cmsWorkspace;
 config.plugins.entries[pluginName] = {
   enabled: true,
+  hooks: {
+    allowConversationAccess: true
+  },
   config: {
     endpoint,
     headers: pluginHeaders,

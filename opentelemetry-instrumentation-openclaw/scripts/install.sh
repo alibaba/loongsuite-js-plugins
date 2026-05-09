@@ -351,6 +351,9 @@ if (armsProject) pluginHeaders['x-arms-project'] = armsProject;
 if (cmsWorkspace) pluginHeaders['x-cms-workspace'] = cmsWorkspace;
 config.plugins.entries[pluginName] = {
   enabled: true,
+  hooks: {
+    allowConversationAccess: true
+  },
   config: {
     endpoint,
     headers: pluginHeaders,
