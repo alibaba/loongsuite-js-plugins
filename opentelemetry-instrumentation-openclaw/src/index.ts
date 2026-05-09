@@ -1965,6 +1965,13 @@ const armsTracePlugin: OpenClawPlugin = {
 
           const rootCtx = ctx;
 
+          // Pre-capture endTime for ENTRY and Step spans synchronously,
+          // so that OpenClaw's post-agent_end internal processing (session
+          // cleanup, context engine maintenance, message delivery) does not
+          // inflate span durations when the setTimeout callback fires late.
+          const entryEndTime = now;
+          const stepEndTime = now;
+
           if (rootCtx.rootSpanStartTime || pendingAgentSpanId) {
             const rootSpanId = rootCtx.rootSpanId;
             const rootSpanStartTime = rootCtx.rootSpanStartTime;
@@ -1985,7 +1992,7 @@ const armsTracePlugin: OpenClawPlugin = {
               if (hasPendingStep && ctx.stepSpanId) {
                 endStepSpan(
                   ctx,
-                  Date.now(),
+                  stepEndTime,
                   deferredStepFinishReason,
                   channelId,
                 );
@@ -2013,9 +2020,8 @@ const armsTracePlugin: OpenClawPlugin = {
               }
 
               if (rootSpanStartTime) {
-                const endTime = Date.now();
                 const rootEndAttrs: Record<string, string | number | boolean> = {
-                  "request.duration_ms": endTime - rootSpanStartTime,
+                  "request.duration_ms": entryEndTime - rootSpanStartTime,
                 };
                 if (resolvedSessionId) {
                   rootEndAttrs["openclaw.session.id"] = resolvedSessionId;
@@ -2035,11 +2041,11 @@ const armsTracePlugin: OpenClawPlugin = {
                 if (pendingEntryInv && handler) {
                   if (!pendingEntryInv.attributes) pendingEntryInv.attributes = {};
                   Object.assign(pendingEntryInv.attributes, rootEndAttrs);
-                  handler.stopEntry(pendingEntryInv, endTime);
+                  handler.stopEntry(pendingEntryInv, entryEndTime);
                 } else {
                   exporter.endSpanById(
                     rootSpanId,
-                    endTime,
+                    entryEndTime,
                     rootEndAttrs,
                     finalOutput,
                     userInput,
@@ -2048,7 +2054,7 @@ const armsTracePlugin: OpenClawPlugin = {
                 exporter.unregisterOpenSpan(rootSpanId);
                 if (config.debug) {
                   api.logger.info(
-                    `[ArmsTrace] Ended root span: spanId=${rootSpanId}, duration=${endTime - rootSpanStartTime}ms, traceId=${traceId}`,
+                    `[ArmsTrace] Ended root span: spanId=${rootSpanId}, duration=${entryEndTime - rootSpanStartTime}ms, traceId=${traceId}`,
                   );
                 }
               }

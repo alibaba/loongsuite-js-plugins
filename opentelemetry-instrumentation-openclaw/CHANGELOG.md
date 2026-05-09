@@ -45,6 +45,7 @@
 
 ### 修复
 
+- 修复 ENTRY/STEP span 结束时间虚高问题：将 ENTRY 和 STEP span 的 endTime 改为在 `agent_end` handler 同步阶段预先捕获，不再使用 `setTimeout` 回调内的 `Date.now()`。此前 OpenClaw 运行时在 agent 执行完成后的内部收尾处理（会话清理、上下文维护、消息交付等）会延迟回调执行，导致 ENTRY span 时长比实际请求处理时长多出数十秒。修复后 ENTRY、AGENT、STEP 三个 span 使用同一时间戳结束，`request.duration_ms` 也相应修正
 - 修复 WebSocket 场景下自定义属性丢失问题：将 `extractOtelFromContent()` 和 `ensureEntrySpan()` 移出 `isUserMessage` 条件块，使 WebSocket 通道（`rawChannelId` 以 `agent/` 开头）也能正确提取 trace context 和 custom attributes
 - 修复 OpenClaw 2026.5.4 插件不加载问题：manifest 缺少 `activation` 声明导致 gateway 启动时跳过加载
 
