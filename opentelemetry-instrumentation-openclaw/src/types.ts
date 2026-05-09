@@ -53,6 +53,8 @@ export interface ArmsTraceConfig {
   enabledHooks?: string[];
   enableTracePropagation?: boolean;
   propagationTargetUrls?: string[];
+  resourceAttributes?: Record<string, string>;
+  globalSpanAttributes?: Record<string, string | number | boolean>;
 }
 
 export type SpanType =

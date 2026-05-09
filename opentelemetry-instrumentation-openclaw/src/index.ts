@@ -95,6 +95,19 @@ const LEGACY_PLUGIN_ID = "openclaw-cms-plugin";
 // Helpers
 // ---------------------------------------------------------------------------
 
+function parseKeyValueEnv(envName: string): Record<string, string> | undefined {
+  const raw = process.env[envName];
+  if (!raw) return undefined;
+  const result: Record<string, string> = {};
+  for (const pair of raw.split(",")) {
+    const idx = pair.indexOf("=");
+    if (idx > 0) {
+      result[pair.slice(0, idx).trim()] = pair.slice(idx + 1).trim();
+    }
+  }
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
 function generateId(length = 16): string {
   const chars = "0123456789abcdef";
   let result = "";
@@ -423,6 +436,20 @@ const armsTracePlugin: OpenClawPlugin = {
       process.env.ARMS_ENABLE_TRACE_PROPAGATION === "1" ||
       false;
 
+    const envResourceAttrs = parseKeyValueEnv("OTEL_RESOURCE_ATTRIBUTES");
+    const configResourceAttrs = resolvedConfig.resourceAttributes as Record<string, string> | undefined;
+    const finalResourceAttributes =
+      envResourceAttrs || configResourceAttrs
+        ? { ...envResourceAttrs, ...configResourceAttrs }
+        : undefined;
+
+    const envSpanAttrs = parseKeyValueEnv("OTEL_SPAN_ATTRIBUTES");
+    const configSpanAttrs = resolvedConfig.globalSpanAttributes as Record<string, string | number | boolean> | undefined;
+    const finalGlobalSpanAttributes =
+      envSpanAttrs || configSpanAttrs
+        ? { ...envSpanAttrs, ...configSpanAttrs }
+        : undefined;
+
     const config: ArmsTraceConfig = {
       endpoint: finalEndpoint,
       headers,
@@ -433,6 +460,8 @@ const armsTracePlugin: OpenClawPlugin = {
       enabledHooks: resolvedConfig.enabledHooks as string[] | undefined,
       enableTracePropagation: finalEnablePropagation,
       propagationTargetUrls: resolvedConfig.propagationTargetUrls as string[] | undefined,
+      resourceAttributes: finalResourceAttributes,
+      globalSpanAttributes: finalGlobalSpanAttributes,
     };
 
     const exporter = new ArmsExporter(api, config);
@@ -946,6 +975,7 @@ const armsTracePlugin: OpenClawPlugin = {
       endTime,
       attributes: {
         ...attributes,
+        ...config.globalSpanAttributes,
         ...ctx.customAttributes,
         "openclaw.version": openclawVersion,
         "openclaw.session.id": ctx.sessionId || channelId,
@@ -1041,6 +1071,9 @@ const armsTracePlugin: OpenClawPlugin = {
         inv.attributes[GEN_AI_SESSION_ID] = ctx.sessionId || channelId;
         inv.attributes["openclaw.run.id"] = ctx.runId;
         inv.attributes["openclaw.turn.id"] = ctx.turnId;
+        if (config.globalSpanAttributes) {
+          Object.assign(inv.attributes, config.globalSpanAttributes);
+        }
         if (ctx.customAttributes) {
           Object.assign(inv.attributes, ctx.customAttributes);
         }
@@ -1162,6 +1195,9 @@ const armsTracePlugin: OpenClawPlugin = {
         }
       }
       ctx.entryInvocation = entryInv;
+      if (config.globalSpanAttributes && entryInv.attributes) {
+        Object.assign(entryInv.attributes, config.globalSpanAttributes);
+      }
       if (ctx.customAttributes && entryInv.attributes) {
         Object.assign(entryInv.attributes, ctx.customAttributes);
       }
@@ -1197,6 +1233,9 @@ const armsTracePlugin: OpenClawPlugin = {
         exporter.registerOpenSpan(ctx.agentSpanId, agentInv.span as import("@opentelemetry/api").Span);
       }
       ctx.agentInvocation = agentInv;
+      if (config.globalSpanAttributes && agentInv.attributes) {
+        Object.assign(agentInv.attributes, config.globalSpanAttributes);
+      }
       if (ctx.customAttributes && agentInv.attributes) {
         Object.assign(agentInv.attributes, ctx.customAttributes);
       }
@@ -1235,6 +1274,9 @@ const armsTracePlugin: OpenClawPlugin = {
       ctx.stepRoundCounter = round;
       ctx.stepCurrentRound = round;
       ctx.stepAwaitingToolResults = false;
+      if (config.globalSpanAttributes && stepInv.attributes) {
+        Object.assign(stepInv.attributes, config.globalSpanAttributes);
+      }
       if (ctx.customAttributes && stepInv.attributes) {
         Object.assign(stepInv.attributes, ctx.customAttributes);
       }
@@ -1788,6 +1830,9 @@ const armsTracePlugin: OpenClawPlugin = {
               toolInv.attributes[GEN_AI_TOOL_CALL_RESULT] = truncateAttr(
                 typeof event.result === "string" ? event.result : JSON.stringify(event.result),
               );
+            }
+            if (config.globalSpanAttributes) {
+              Object.assign(toolInv.attributes, config.globalSpanAttributes);
             }
             if (traceContext.customAttributes) {
               Object.assign(toolInv.attributes, traceContext.customAttributes);

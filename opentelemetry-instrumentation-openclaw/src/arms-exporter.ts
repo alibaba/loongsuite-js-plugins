@@ -83,6 +83,7 @@ export class ArmsExporter {
       "telemetry.sdk.language": "nodejs",
       "acs.arms.service.feature": "genai_app",
       "gen_ai.agent.system": "openclaw",
+      ...this.config.resourceAttributes,
     });
 
     const traceUrl = this.resolveTraceUrl();

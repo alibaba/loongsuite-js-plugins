@@ -11,6 +11,11 @@
 
 ### 新增
 
+- **自定义 Resource / Span 属性注入**：
+  - 配置文件支持 `resourceAttributes`（注入到 Resource）和 `globalSpanAttributes`（注入到所有 span）
+  - 环境变量支持 `OTEL_RESOURCE_ATTRIBUTES`（标准 OTel 格式 `key1=value1,key2=value2`）和 `OTEL_SPAN_ATTRIBUTES`（同格式）
+  - 优先级：配置文件 > 环境变量；per-request `customAttributes` > `globalSpanAttributes` > 内置属性
+  - 新增测试用例：`test/custom-attributes.test.ts`（13 个用例覆盖解析、优先级、注入、边界场景）
 - **W3C Trace Context 传播**：
   - 支持从 HTTP 请求头 `traceparent` 继承上游 trace context，所有 span 自动关联到上游调用链
   - 支持向下游 LLM API 请求注入 `traceparent`，实现端到端全链路追踪

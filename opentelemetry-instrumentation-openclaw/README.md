@@ -100,6 +100,8 @@ When a config field is not set in `openclaw.json`, the plugin falls back to envi
 | `ARMS_SERVICE_NAME` | `serviceName` | Service name (also reads `OTEL_SERVICE_NAME`) |
 | `ARMS_TRACE_DEBUG` | `debug` | Enable debug logging (`true` / `1`) |
 | `ARMS_ENABLE_TRACE_PROPAGATION` | `enableTracePropagation` | Enable W3C Trace Context propagation (`true` / `1`) |
+| `OTEL_RESOURCE_ATTRIBUTES` | `resourceAttributes` | Custom resource attributes (`key1=value1,key2=value2`) |
+| `OTEL_SPAN_ATTRIBUTES` | `globalSpanAttributes` | Global span attributes injected to all spans (`key1=value1,key2=value2`) |
 
 Priority: **config file > environment variable > default value**
 
@@ -151,6 +153,44 @@ The `<!--otel:...-->` comment is stripped from the content before it reaches the
 - Key max length: 128 characters
 - Value max length: 1024 characters
 - Reserved prefixes `openclaw.*` and `gen_ai.*` are rejected
+
+---
+
+## Custom Resource & Span Attributes
+
+Inject fixed attributes into the OTel Resource or into every span, useful for deployment metadata and business identifiers.
+
+### Via config file
+
+```json
+{
+  "config": {
+    "resourceAttributes": {
+      "deployment.environment": "production",
+      "k8s.namespace": "default"
+    },
+    "globalSpanAttributes": {
+      "biz.team": "payment",
+      "biz.app": "checkout"
+    }
+  }
+}
+```
+
+### Via environment variables
+
+```bash
+export OTEL_RESOURCE_ATTRIBUTES="deployment.environment=production,k8s.namespace=default"
+export OTEL_SPAN_ATTRIBUTES="biz.team=payment,biz.app=checkout"
+```
+
+### Attribute priority (low → high)
+
+1. `globalSpanAttributes` / `OTEL_SPAN_ATTRIBUTES` — global fixed attributes
+2. Per-request `customAttributes` (via `<!--otel:{attr:{...}}-->`) — dynamic per-conversation
+3. Built-in `openclaw.*` / `gen_ai.*` attributes — always preserved
+
+For `resourceAttributes`, config file values override environment variable values for the same key.
 
 ---
 
@@ -227,6 +267,8 @@ If you prefer to configure manually, edit `~/.openclaw/openclaw.json`:
 | `flushIntervalMs` | number | `5000` | Max buffer wait time (ms) |
 | `enableTracePropagation` | boolean | `false` | Enable W3C Trace Context propagation |
 | `propagationTargetUrls` | string[] | — | URL substrings for outbound `traceparent` injection |
+| `resourceAttributes` | object | — | Custom resource attributes (merged into OTel Resource) |
+| `globalSpanAttributes` | object | — | Custom attributes injected into every span |
 | `enabledHooks` | string[] | — | Restrict which hooks are active (all if omitted) |
 
 > **Note**: Set `diagnostics.otel.traces: false` to avoid duplicate traces — `opentelemetry-instrumentation-openclaw` already handles trace reporting.
