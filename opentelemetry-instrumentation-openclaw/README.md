@@ -83,7 +83,7 @@ If your OTLP backend requires authentication headers, pass them to the plugin co
 }
 ```
 
-> **Note**: `hooks.allowConversationAccess: true` is required for OpenClaw >= 2026.5.4. Without it, the plugin loads but conversation hooks (`message_received`, `llm_input`, `llm_output`, `agent_end`) are blocked by the security policy. Older versions ignore this field.
+> **Note**: `hooks.allowConversationAccess: true` is required for OpenClaw >= 2026.4.25. Without it, the plugin loads but conversation hooks (`llm_input`, `llm_output`, `agent_end`) are blocked by the security policy. Versions before 2026.4.25 do not recognize this field and will reject it with a config validation error — omit the `hooks` block on older versions. The install script auto-detects the OpenClaw version and writes this field only when supported.
 
 > **Alibaba Cloud ARMS users**: The headers `x-arms-license-key`, `x-arms-project`, and `x-cms-workspace` are ARMS-specific authentication fields. Obtain these from the ARMS console → Integration Center.
 

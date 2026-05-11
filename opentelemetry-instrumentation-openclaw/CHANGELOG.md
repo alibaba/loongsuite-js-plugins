@@ -34,7 +34,7 @@
   - `ARMS_ENABLE_TRACE_PROPAGATION` → enableTracePropagation
 - Resource 新增 `gen_ai.agent.system=openclaw` 属性
 - 插件 manifest 新增 `activation` 声明，兼容 OpenClaw 2026.5.4 gateway 启动加载机制
-- 安装脚本自动写入 `hooks.allowConversationAccess: true`，确保对话类 hooks 不被安全策略拦截
+- 安装脚本自动检测 OpenClaw 版本，>= 2026.4.25 时写入 `hooks.allowConversationAccess: true`；低版本跳过以避免配置校验报错
 - 新增测试用例：`trace-compat.test.ts`（999 行）、`trace-propagation.test.ts`（441 行）
 
 ### 变更
@@ -46,7 +46,7 @@
   - `src/index.ts` 重构：从直接操作 span 改为操作 invocation + handler 驱动
 - 新增 `@loongsuite/opentelemetry-util-genai` 依赖
 - 配置优先级明确为：配置文件 > 环境变量 > 默认值
-- 安装脚本（`install.sh`、`install-wget.sh`、`install-local-test.sh`）均补齐 `hooks.allowConversationAccess` 写入
+- 安装脚本（`install.sh`、`install-wget.sh`、`install-local-test.sh`）新增 OpenClaw 版本检测，>= 2026.4.25 时写入 `hooks.allowConversationAccess`；低版本自动跳过
 
 ### 修复
 
