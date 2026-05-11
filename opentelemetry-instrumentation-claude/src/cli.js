@@ -167,7 +167,16 @@ function generateHookEntry() {
     "# Prevent legacy NODE_OPTIONS --require intercept.js from breaking hook subprocesses",
     "unset NODE_OPTIONS 2>/dev/null || true",
     "",
-    `exec "$NODE_BIN" ${JSON.stringify(binPath)} "$@"`,
+    "# Resolve bin path: prefer relative (portable), fall back to install-time absolute",
+    'SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"',
+    'BIN_PATH="$SCRIPT_DIR/package/bin/otel-claude-hook"',
+    `if [[ ! -f "$BIN_PATH" ]]; then BIN_PATH=${JSON.stringify(binPath)}; fi`,
+    'if [[ ! -f "$BIN_PATH" ]]; then',
+    '  echo "[otel-claude-hook] bin not found — please reinstall: curl -fsSL <install-url> | bash" >&2',
+    '  exit 0',
+    'fi',
+    "",
+    'exec "$NODE_BIN" "$BIN_PATH" "$@"',
     "",
   ].join("\n");
 

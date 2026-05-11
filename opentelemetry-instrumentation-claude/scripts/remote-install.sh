@@ -239,6 +239,8 @@ if [ -n "$ENDPOINT" ]; then
             sed '/# BEGIN otel-claude-hook-env/,/# END otel-claude-hook-env/d' "$file" > "$tmp_clean"
             mv "$tmp_clean" "$file"
         fi
+        # Ensure file ends with a newline before appending
+        [ -s "$file" ] && [ "$(tail -c1 "$file" | wc -l)" -eq 0 ] && echo "" >> "$file"
         cat >> "$file" << ENVBLOCK
 
 # BEGIN otel-claude-hook-env

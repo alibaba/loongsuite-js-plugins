@@ -97,6 +97,8 @@ add_alias_to_file() {
             "  ↳ Already present in $file"
         return
     fi
+    # Ensure file ends with a newline before appending
+    [ -s "$file" ] && [ "$(tail -c1 "$file" | wc -l)" -eq 0 ] && echo "" >> "$file"
     if cat >> "$file" << ALIAS_BLOCK
 # BEGIN otel-claude-hook
 $ALIAS_LINE
