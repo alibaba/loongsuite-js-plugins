@@ -101,9 +101,9 @@ export function setupOtel(
   return { meterProvider, loggerProvider, tracerProvider }
 }
 
-/** Creates all metric instruments using the global `MeterProvider`. Metric names are prefixed with `prefix`. */
-export function createInstruments(prefix: string): Instruments {
-  const meter = metrics.getMeter("com.opencode")
+/** Creates all metric instruments using the provided `MeterProvider`. Metric names are prefixed with `prefix`. */
+export function createInstruments(prefix: string, meterProvider: MeterProvider): Instruments {
+  const meter = meterProvider.getMeter("com.opencode")
   return {
     sessionCounter: meter.createCounter(`${prefix}session.count`, {
       unit: "{session}",

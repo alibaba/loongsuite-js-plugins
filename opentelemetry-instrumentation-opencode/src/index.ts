@@ -1,7 +1,6 @@
 import type { Plugin, AuthHook } from "@opencode-ai/plugin"
 import { SeverityNumber } from "@opentelemetry/api-logs"
-import { logs } from "@opentelemetry/api-logs"
-import { SpanStatusCode, trace } from "@opentelemetry/api"
+import { SpanStatusCode } from "@opentelemetry/api"
 import { genAiSpanAttrs, genAiSpanName, isTraceEnabled, setBoundedMap, startChildSpan, truncate } from "./util.ts"
 import pkg from "../package.json" with { type: "json" }
 import type {
@@ -90,10 +89,10 @@ export const OtelPlugin: Plugin = async ({ project, client }) => {
   )
   await log("info", "OTel SDK initialized", { tracesEnabled: !config.tracesDisabled, logsEnabled: !config.logsDisabled })
 
-  const instruments = createInstruments(config.metricPrefix)
+  const instruments = createInstruments(config.metricPrefix, meterProvider)
   const noopLogger = { emit() {} } as unknown as import("@opentelemetry/api-logs").Logger
-  const logger = loggerProvider ? logs.getLogger("com.opencode") : noopLogger
-  const tracer = tracerProvider ? trace.getTracer("com.opencode") : null
+  const logger = loggerProvider ? loggerProvider.getLogger("com.opencode") : noopLogger
+  const tracer = tracerProvider ? tracerProvider.getTracer("com.opencode") : null
   const pendingToolSpans = new Map()
   const pendingPermissions = new Map()
   const sessionTotals = new Map()
