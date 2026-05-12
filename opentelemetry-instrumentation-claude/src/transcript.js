@@ -25,27 +25,49 @@ const MAX_TRANSCRIPT_BYTES = 50 * 1024 * 1024; // 50 MB safety limit
  * @param {string} transcriptPath - Path to the transcript JSONL file
  * @param {number} startTime - Session start time (epoch seconds, for timestamp assignment)
  * @param {number} stopTime - Session stop time (epoch seconds)
- * @returns {Array<Object>} Array of llm_call events
+ * @param {number} [byteOffset=0] - Byte offset to start reading from (for incremental parsing across turns)
+ * @returns {Array<Object>} Array of llm_call events, with `.nextOffset` property indicating the byte position for the next incremental read
  */
-function parseClaudeTranscript(transcriptPath, startTime, stopTime) {
+function parseClaudeTranscript(transcriptPath, startTime, stopTime, byteOffset = 0) {
   if (!transcriptPath || !fs.existsSync(transcriptPath)) return [];
 
   let content;
+  let fileSize;
   try {
     const stat = fs.statSync(transcriptPath);
-    if (stat.size > MAX_TRANSCRIPT_BYTES) {
-      // Read only the tail — current session records are always at the end
+    fileSize = stat.size;
+
+    if (byteOffset >= fileSize) {
+      const empty = [];
+      empty.nextOffset = byteOffset;
+      return empty;
+    }
+
+    const readFrom = Math.max(byteOffset, 0);
+    const readLen = fileSize - readFrom;
+
+    if (readLen > MAX_TRANSCRIPT_BYTES) {
       const fd = fs.openSync(transcriptPath, "r");
       try {
-        const offset = stat.size - MAX_TRANSCRIPT_BYTES;
-        const buf = Buffer.alloc(MAX_TRANSCRIPT_BYTES);
-        fs.readSync(fd, buf, 0, MAX_TRANSCRIPT_BYTES, offset);
+        const tailOffset = fileSize - MAX_TRANSCRIPT_BYTES;
+        const actualOffset = Math.max(tailOffset, readFrom);
+        const actualLen = fileSize - actualOffset;
+        const buf = Buffer.alloc(actualLen);
+        fs.readSync(fd, buf, 0, actualLen, actualOffset);
         content = buf.toString("utf-8");
-        // Discard the first partial line (we likely landed mid-line)
-        const firstNewline = content.indexOf("\n");
-        if (firstNewline >= 0) {
-          content = content.slice(firstNewline + 1);
+        if (actualOffset > readFrom) {
+          const firstNewline = content.indexOf("\n");
+          if (firstNewline >= 0) content = content.slice(firstNewline + 1);
         }
+      } finally {
+        fs.closeSync(fd);
+      }
+    } else if (readFrom > 0) {
+      const fd = fs.openSync(transcriptPath, "r");
+      try {
+        const buf = Buffer.alloc(readLen);
+        fs.readSync(fd, buf, 0, readLen, readFrom);
+        content = buf.toString("utf-8");
       } finally {
         fs.closeSync(fd);
       }
@@ -113,7 +135,11 @@ function parseClaudeTranscript(transcriptPath, startTime, stopTime) {
     // Ignore other record types (permission-mode, attachment, last-prompt, etc.)
   }
 
-  if (assistantGroups.size === 0) return [];
+  if (assistantGroups.size === 0) {
+    const empty = [];
+    empty.nextOffset = fileSize;
+    return empty;
+  }
 
   // Phase 2: Deduplicate content blocks within each assistant group
   for (const group of assistantGroups.values()) {
@@ -172,6 +198,7 @@ function parseClaudeTranscript(transcriptPath, startTime, stopTime) {
     assignTimestamps(llmEvents, startTime, stopTime);
   }
 
+  llmEvents.nextOffset = fileSize;
   return llmEvents;
 }
 
@@ -306,6 +333,10 @@ function alignWithHookEvents(llmEvents, hookEvents, stopTime) {
       const postAfterPrev = startAnchors.find(a => a.ts >= prevEnd);
       if (postAfterPrev) {
         ev.request_start_time = postAfterPrev.ts;
+      } else {
+        // PostToolUse dropped — place after prevEnd (= PreToolUse timestamp)
+        // so this llm_call sorts after the orphan PreToolUse hook event
+        ev.request_start_time = prevEnd + 0.001;
       }
     }
 

@@ -39,7 +39,8 @@ describe("parseClaudeTranscript", () => {
   test("returns [] for empty file", () => {
     const p = tmpFile("empty.jsonl");
     fs.writeFileSync(p, "", "utf-8");
-    expect(parseClaudeTranscript(p, 0, 100)).toEqual([]);
+    const result = parseClaudeTranscript(p, 0, 100);
+    expect(result).toHaveLength(0);
   });
 
   test("parses single LLM call (1 user + 1 assistant)", () => {
@@ -283,7 +284,7 @@ describe("parseClaudeTranscript", () => {
       { type: "assistant", message: { content: [{ type: "text", text: "hello" }] } },
     ]);
     const events = parseClaudeTranscript(p, 0, 100);
-    expect(events).toEqual([]);
+    expect(events).toHaveLength(0);
   });
 
   test("handles missing usage gracefully", () => {
@@ -303,6 +304,200 @@ describe("parseClaudeTranscript", () => {
     expect(events).toHaveLength(1);
     expect(events[0].input_tokens).toBe(0);
     expect(events[0].output_tokens).toBe(0);
+  });
+});
+
+// ─── incremental reading (byteOffset) ─────────────────────────────────────
+describe("parseClaudeTranscript incremental reading", () => {
+  test("returns nextOffset on first full read", () => {
+    const p = writeJsonl("offset-first.jsonl", [
+      { type: "user", message: { content: "hello" } },
+      {
+        type: "assistant",
+        message: {
+          id: "msg_001",
+          model: "claude-opus-4-6",
+          stop_reason: "end_turn",
+          usage: { input_tokens: 10, output_tokens: 5 },
+          content: [{ type: "text", text: "Hi!" }],
+        },
+      },
+    ]);
+
+    const events = parseClaudeTranscript(p, 100, 200);
+    expect(events).toHaveLength(1);
+    expect(typeof events.nextOffset).toBe("number");
+    expect(events.nextOffset).toBeGreaterThan(0);
+  });
+
+  test("incremental read only returns new turn data", () => {
+    const p = tmpFile("offset-incremental.jsonl");
+
+    // Write Turn 1
+    const turn1Records = [
+      { type: "user", message: { content: "question one" } },
+      {
+        type: "assistant",
+        message: {
+          id: "msg_t1",
+          model: "claude-opus-4-6",
+          stop_reason: "end_turn",
+          usage: { input_tokens: 10, output_tokens: 5 },
+          content: [{ type: "text", text: "answer one" }],
+        },
+      },
+    ];
+    fs.writeFileSync(p, turn1Records.map(r => JSON.stringify(r)).join("\n") + "\n", "utf-8");
+
+    // Parse Turn 1 (full read)
+    const events1 = parseClaudeTranscript(p, 100, 200);
+    expect(events1).toHaveLength(1);
+    expect(events1[0].input_messages[0].content).toBe("question one");
+    expect(events1[0].output_content[0].text).toBe("answer one");
+    const offset1 = events1.nextOffset;
+    expect(offset1).toBeGreaterThan(0);
+
+    // Append Turn 2
+    const turn2Records = [
+      { type: "user", message: { content: "question two" } },
+      {
+        type: "assistant",
+        message: {
+          id: "msg_t2",
+          model: "claude-opus-4-6",
+          stop_reason: "end_turn",
+          usage: { input_tokens: 20, output_tokens: 10 },
+          content: [{ type: "text", text: "answer two" }],
+        },
+      },
+    ];
+    fs.appendFileSync(p, turn2Records.map(r => JSON.stringify(r)).join("\n") + "\n", "utf-8");
+
+    // Parse Turn 2 (incremental from offset)
+    const events2 = parseClaudeTranscript(p, 200, 300, offset1);
+    expect(events2).toHaveLength(1);
+    expect(events2[0].input_messages[0].content).toBe("question two");
+    expect(events2[0].output_content[0].text).toBe("answer two");
+    expect(events2[0].input_tokens).toBe(20);
+    expect(events2.nextOffset).toBeGreaterThan(offset1);
+  });
+
+  test("returns empty array when offset equals file size (no new data)", () => {
+    const p = writeJsonl("offset-noop.jsonl", [
+      { type: "user", message: { content: "hi" } },
+      {
+        type: "assistant",
+        message: {
+          id: "msg_001",
+          model: "claude-opus-4-6",
+          stop_reason: "end_turn",
+          usage: { input_tokens: 1, output_tokens: 1 },
+          content: [{ type: "text", text: "hello" }],
+        },
+      },
+    ]);
+
+    const events1 = parseClaudeTranscript(p, 0, 100);
+    const offset = events1.nextOffset;
+
+    // No new data — should return empty
+    const events2 = parseClaudeTranscript(p, 100, 200, offset);
+    expect(events2).toHaveLength(0);
+    expect(events2.nextOffset).toBe(offset);
+  });
+
+  test("three consecutive incremental reads return correct per-turn data", () => {
+    const p = tmpFile("offset-three-turns.jsonl");
+
+    // Turn 1
+    fs.writeFileSync(p,
+      JSON.stringify({ type: "user", message: { content: "who are you" } }) + "\n" +
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          id: "msg_1", model: "claude-opus-4-6", stop_reason: "end_turn",
+          usage: { input_tokens: 10, output_tokens: 5 },
+          content: [{ type: "text", text: "I am Claude" }],
+        },
+      }) + "\n",
+      "utf-8"
+    );
+
+    const e1 = parseClaudeTranscript(p, 100, 110);
+    expect(e1).toHaveLength(1);
+    expect(e1[0].output_content[0].text).toBe("I am Claude");
+    const off1 = e1.nextOffset;
+
+    // Turn 2
+    fs.appendFileSync(p,
+      JSON.stringify({ type: "user", message: { content: "what model" } }) + "\n" +
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          id: "msg_2", model: "claude-opus-4-6", stop_reason: "end_turn",
+          usage: { input_tokens: 15, output_tokens: 8 },
+          content: [{ type: "text", text: "I use Opus" }],
+        },
+      }) + "\n",
+      "utf-8"
+    );
+
+    const e2 = parseClaudeTranscript(p, 110, 120, off1);
+    expect(e2).toHaveLength(1);
+    expect(e2[0].input_messages[0].content).toBe("what model");
+    expect(e2[0].output_content[0].text).toBe("I use Opus");
+    const off2 = e2.nextOffset;
+
+    // Turn 3
+    fs.appendFileSync(p,
+      JSON.stringify({ type: "user", message: { content: "what can you do" } }) + "\n" +
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          id: "msg_3", model: "claude-opus-4-6", stop_reason: "end_turn",
+          usage: { input_tokens: 20, output_tokens: 12 },
+          content: [{ type: "text", text: "I can help with code" }],
+        },
+      }) + "\n",
+      "utf-8"
+    );
+
+    const e3 = parseClaudeTranscript(p, 120, 130, off2);
+    expect(e3).toHaveLength(1);
+    expect(e3[0].input_messages[0].content).toBe("what can you do");
+    expect(e3[0].output_content[0].text).toBe("I can help with code");
+    expect(e3.nextOffset).toBeGreaterThan(off2);
+  });
+
+  test("byteOffset=0 reads entire file (backward compatible)", () => {
+    const p = tmpFile("offset-compat.jsonl");
+    fs.writeFileSync(p,
+      JSON.stringify({ type: "user", message: { content: "q1" } }) + "\n" +
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          id: "msg_a", model: "test", stop_reason: "end_turn",
+          usage: { input_tokens: 1, output_tokens: 1 },
+          content: [{ type: "text", text: "a1" }],
+        },
+      }) + "\n" +
+      JSON.stringify({ type: "user", message: { content: "q2" } }) + "\n" +
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          id: "msg_b", model: "test", stop_reason: "end_turn",
+          usage: { input_tokens: 2, output_tokens: 2 },
+          content: [{ type: "text", text: "a2" }],
+        },
+      }) + "\n",
+      "utf-8"
+    );
+
+    // byteOffset=0 (default) reads everything
+    const events = parseClaudeTranscript(p, 0, 100, 0);
+    expect(events).toHaveLength(2);
+    expect(events[0].output_content[0].text).toBe("a1");
+    expect(events[1].output_content[0].text).toBe("a2");
   });
 });
 
@@ -436,6 +631,37 @@ describe("alignWithHookEvents", () => {
 
     // Only 1 pre_tool anchor, so after first llm_call uses it, the rest get stopTime
     expect(llmEvents[2].timestamp).toBe(300);
+  });
+
+  test("PostToolUse dropped: next llm_call request_start_time >= prevEnd", () => {
+    // Scenario: 3 llm_calls, 2 pre_tool_use, but only 1 post_tool_use
+    // (last tool's PostToolUse is dropped — 30% drop rate)
+    //
+    // Expected timeline:
+    //   user_prompt_submit(100) → llm#0 → pre_tool#0(110) → post_tool#0(115)
+    //   → llm#1 → pre_tool#1(120) → [PostToolUse DROPPED]
+    //   → llm#2 (should sort AFTER pre_tool#1)
+    const llmEvents = [
+      { type: "llm_call", timestamp: 0, request_start_time: 0 },
+      { type: "llm_call", timestamp: 0, request_start_time: 0 },
+      { type: "llm_call", timestamp: 0, request_start_time: 0 },
+    ];
+    const hookEvents = [
+      { type: "user_prompt_submit", timestamp: 100 },
+      { type: "pre_tool_use", timestamp: 110 },
+      { type: "post_tool_use", timestamp: 115 },
+      { type: "pre_tool_use", timestamp: 120 },
+      // no post_tool_use for second tool — dropped
+    ];
+
+    alignWithHookEvents(llmEvents, hookEvents, 200);
+
+    // llm#1.timestamp should be pre_tool#1 = 120 (the second pre_tool anchor)
+    expect(llmEvents[1].timestamp).toBe(120);
+
+    // llm#2.request_start_time must be > llm#1.timestamp (120)
+    // so that llm#2 sorts AFTER the orphan PreToolUse event at 120
+    expect(llmEvents[2].request_start_time).toBeGreaterThan(llmEvents[1].timestamp);
   });
 
   test("corrects request_start_time >= timestamp", () => {

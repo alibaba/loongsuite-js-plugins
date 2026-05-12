@@ -1022,11 +1022,17 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
   let allEvents = Array.isArray(state.events) ? [...state.events] : [];
   let llmEvents = [];
 
-  // Primary: parse Claude Code transcript
+  // Primary: parse Claude Code transcript (incremental — only new data since last Stop)
   if (state.transcript_path) {
     try {
       const { parseClaudeTranscript, alignWithHookEvents } = require("./transcript");
-      llmEvents = parseClaudeTranscript(state.transcript_path, startTime, stopTime);
+      llmEvents = parseClaudeTranscript(
+        state.transcript_path, startTime, stopTime,
+        state.transcript_offset || 0
+      );
+      if (typeof llmEvents.nextOffset === "number") {
+        state._next_transcript_offset = llmEvents.nextOffset;
+      }
       if (llmEvents.length > 0) {
         alignWithHookEvents(llmEvents, allEvents, stopTime);
       }
@@ -1285,7 +1291,7 @@ function cmdUserPromptSubmit() {
 
   const state = loadState(sessionId);
   maybeSaveTranscriptPath(state, event);
-  if (!state.start_time) state.start_time = Date.now() / 1000;
+  state.start_time = Date.now() / 1000;
   if (!state.prompt) state.prompt = prompt;
   state.metrics.turns = (state.metrics.turns || 0) + 1;
   if (event.model) state.model = event.model;
@@ -1449,6 +1455,10 @@ async function cmdStop() {
     await exportSessionTrace(state, stopReason);
     // Clear exported events so subsequent Stop calls (which fire after every
     // turn, not just session end) don't re-export old turns as duplicates.
+    if (typeof state._next_transcript_offset === "number") {
+      state.transcript_offset = state._next_transcript_offset;
+      delete state._next_transcript_offset;
+    }
     state.events = [];
     state.stop_time = null;
     saveState(sessionId, state);
@@ -1687,7 +1697,7 @@ module.exports = {
     const sessionId = event.session_id || require("crypto").randomUUID();
     const prompt = event.prompt || "";
     const state = loadState(sessionId);
-    if (!state.start_time) state.start_time = Date.now() / 1000;
+    state.start_time = Date.now() / 1000;
     if (!state.prompt) state.prompt = prompt;
     state.metrics.turns = (state.metrics.turns || 0) + 1;
     if (event.model) state.model = event.model;
