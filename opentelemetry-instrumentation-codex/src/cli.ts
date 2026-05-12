@@ -313,25 +313,62 @@ function buildHooksJson(entryPath: string): Record<string, unknown> {
   return { hooks };
 }
 
-function ensureCodexHooksFeature(configPath: string): void {
-  let content = "";
-  if (fs.existsSync(configPath)) {
-    content = fs.readFileSync(configPath, "utf-8");
-  }
-  if (content.includes("codex_hooks")) return;
+// Match `hooks = false` (or = "false") only directly under the [features] table,
+// skipping nested tables like [features.something] or [hooks.state.xxx].
+function findFeaturesHooksFalse(
+  content: string,
+): { lineStart: number; lineEnd: number; falseStart: number; falseEnd: number } | null {
+  const lines = content.split("\n");
+  let inFeatures = false;
+  let offset = 0;
+  for (const line of lines) {
+    const lineStart = offset;
+    const lineEnd = offset + line.length;
+    offset = lineEnd + 1; // +1 for the "\n" we split on
 
-  const featuresMatch = content.match(/^\[features\]\s*$/m);
-  if (featuresMatch && featuresMatch.index !== undefined) {
-    const insertPos = featuresMatch.index + featuresMatch[0].length;
-    content =
-      content.slice(0, insertPos) +
-      "\ncodex_hooks = true" +
-      content.slice(insertPos);
-  } else {
-    const separator = content.endsWith("\n") || !content ? "" : "\n";
-    content += separator + "\n[features]\ncodex_hooks = true\n";
+    const trimmed = line.trim();
+    if (trimmed.startsWith("[")) {
+      inFeatures = /^\[features\]\s*$/.test(trimmed);
+      continue;
+    }
+    if (!inFeatures) continue;
+
+    // Match `hooks = false` (with optional quotes/whitespace), but not e.g. `enable_hooks` or `plugin_hooks`.
+    const m = line.match(/^(\s*hooks\s*=\s*)("?false"?)(\s*(?:#.*)?)$/);
+    if (m) {
+      const prefixLen = m[1]!.length;
+      const valueLen = m[2]!.length;
+      const falseStart = lineStart + prefixLen;
+      const falseEnd = falseStart + valueLen;
+      return { lineStart, lineEnd, falseStart, falseEnd };
+    }
   }
-  fs.writeFileSync(configPath, content, "utf-8");
+  return null;
+}
+
+// New behavior: codex >= 2026-04-22 has `Feature::CodexHooks` Stable with
+// default_enabled = true, so we don't need to write any feature flag in
+// the common case. Only intervene when the user has explicitly disabled
+// hooks globally (which would silently break our plugin), and inform the
+// user about the change so they can decide whether to revert.
+function maybeEnableHooksFeature(configPath: string): void {
+  if (!fs.existsSync(configPath)) return;
+  const content = fs.readFileSync(configPath, "utf-8");
+
+  const found = findFeaturesHooksFalse(content);
+  if (!found) return;
+
+  const updated =
+    content.slice(0, found.falseStart) + "true" + content.slice(found.falseEnd);
+  fs.writeFileSync(configPath, updated, "utf-8");
+
+  process.stderr.write(
+    `\n[otel-codex-hook] WARNING: detected [features] hooks = false in ${configPath}\n` +
+    `[otel-codex-hook]   Changed to hooks = true so otel-codex-hook can run.\n` +
+    `[otel-codex-hook]   Note: this is a GLOBAL switch and also enables other hooks.\n` +
+    `[otel-codex-hook]   To disable a specific hook, use [hooks.state."<key>"] enabled = false.\n` +
+    `[otel-codex-hook]   Uninstalling otel-codex-hook will NOT revert this change automatically.\n\n`,
+  );
 }
 
 function isLegacyHookLine(line: string): boolean {
@@ -342,33 +379,67 @@ function isLegacyHookLine(line: string): boolean {
   );
 }
 
+// Remove the marker-anchored legacy hook block, plus any stray
+// otel-codex-hook lines outside it. Two shapes are recognized:
+//
+//   1. Old-old: marker line + 5x `[[hooks.X]] / type = "command" / command = "..."`
+//      blocks where command refers to otel-codex-hook. We can find the end of
+//      the block by locating the trailing `command = "otel-codex-hook stop"`.
+//
+//   2. Even older / partial: marker line + 5x `[[hooks.X]] / type = "command"`
+//      with NO command field (this is what the yemo report contained).
+//      The end is detected structurally: keep consuming `[[hooks.X]]` array
+//      sections until the next non-`[[hooks.X]]` table header or EOF.
 function removeLegacyTomlHooks(configPath: string): void {
   if (!fs.existsSync(configPath)) return;
   let content = fs.readFileSync(configPath, "utf-8");
-  if (!content.includes("otel-codex-hook")) return;
 
   const marker = "# OpenTelemetry instrumentation hooks";
-  const markerIdx = content.indexOf(marker);
-  if (markerIdx !== -1) {
-    const endStr = 'command = "otel-codex-hook stop"';
-    const endIdx = content.indexOf(endStr, markerIdx);
-    if (endIdx !== -1) {
-      let cutEnd = endIdx + endStr.length;
-      while (
-        cutEnd < content.length &&
-        (content[cutEnd] === "\n" ||
-          content[cutEnd] === "\r" ||
-          content[cutEnd] === " ")
-      ) {
-        cutEnd++;
+  const hasMarker = content.includes(marker);
+  const hasOtelRef = content.includes("otel-codex-hook");
+  if (!hasMarker && !hasOtelRef) return;
+
+  if (hasMarker) {
+    const lines = content.split("\n");
+    const out: string[] = [];
+    let i = 0;
+    const hooksArrayHeader = /^\s*\[\[hooks\.[A-Za-z][A-Za-z0-9_]*\]\]\s*$/;
+    const anyHeader = /^\s*\[/;
+
+    while (i < lines.length) {
+      if (lines[i]!.trim() === marker) {
+        i++; // drop the marker comment itself
+        // Drop any blank lines and consecutive [[hooks.X]] sections that follow.
+        while (i < lines.length) {
+          const line = lines[i]!;
+          const trimmed = line.trim();
+          if (trimmed === "") {
+            i++;
+            continue;
+          }
+          if (hooksArrayHeader.test(line)) {
+            i++; // drop the header
+            // Consume the section body up to the next table header or blank line.
+            while (i < lines.length) {
+              const t = lines[i]!.trim();
+              if (t === "" || anyHeader.test(lines[i]!)) break;
+              i++;
+            }
+            continue;
+          }
+          break; // hit something that's not part of the legacy block
+        }
+        continue;
       }
-      content = content.slice(0, markerIdx) + content.slice(cutEnd);
-    } else {
-      content = content
-        .split("\n")
-        .filter((l) => !isLegacyHookLine(l))
-        .join("\n");
+      // Catch stray otel-codex-hook lines that escaped the marker block.
+      if (isLegacyHookLine(lines[i]!)) {
+        i++;
+        continue;
+      }
+      out.push(lines[i]!);
+      i++;
     }
+    content = out.join("\n");
   } else {
     content = content
       .split("\n")
@@ -423,16 +494,10 @@ export async function cmdInstall(opts: {
     JSON.stringify(hooksData, null, 2) + "\n",
     "utf-8",
   );
-  process.stderr.write(
-    `[otel-codex-hook] Hook entry: ${entryPath}\n`,
-  );
-  process.stderr.write(
-    `[otel-codex-hook] Hooks written to ${hooksJsonPath}\n`,
-  );
 
   // Clean up legacy TOML hooks before writing new trust state
   removeLegacyTomlHooks(configPath);
-  ensureCodexHooksFeature(configPath);
+  maybeEnableHooksFeature(configPath);
 
   const absHooksJsonPath = path.resolve(hooksJsonPath);
   writeTrustedHashes(
@@ -442,11 +507,13 @@ export async function cmdInstall(opts: {
     HOOK_EVENTS,
     EVENT_TO_SUBCOMMAND,
   );
-  process.stderr.write(
-    `[otel-codex-hook] Trusted hashes written to ${configPath}\n`,
-  );
 
-  process.stderr.write("[otel-codex-hook] Hooks installed successfully.\n");
+  if (!opts.quiet) {
+    process.stderr.write(
+      `[otel-codex-hook] Installed ${HOOK_EVENTS.length} hooks → ${home}/{hooks.json,config.toml}\n` +
+        "[otel-codex-hook] Requires codex >= 2026-04-22 (Stable hooks)\n",
+    );
+  }
 }
 
 function isOtelHookCommand(cmd: string): boolean {
