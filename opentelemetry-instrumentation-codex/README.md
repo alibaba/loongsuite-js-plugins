@@ -95,161 +95,167 @@ otel-codex-hook check-env
 
 ## 配置
 
-支持两种配置方式：**配置文件**（推荐）和 **环境变量**。配置文件优先级高于环境变量。
+支持两种配置方式：**配置文件** 和 **环境变量**。同一字段优先级：配置文件 > 环境变量 > 默认值。空字符串视同未设置。
 
-### 配置文件（推荐）
+### 配置文件：`~/.codex/otel-config.json`
 
-在以下路径创建 JSON 配置文件（按优先级查找）：
+唯一识别的配置文件路径（JSON 格式）。完整字段表：
 
-| 优先级 | 路径 | 作用域 |
-|--------|------|--------|
-| 1 | `./codex.config.json` | 项目级 |
-| 2 | `~/.codex/otel.config.json` | 全局 |
+| JSON 字段 | 环境变量 fallback | 默认值 | 说明 |
+|---|---|---|---|
+| `otlp_endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | `""` | OTLP/HTTP 后端地址；空值=不启用 trace 导出 |
+| `otlp_headers` | `OTEL_EXPORTER_OTLP_HEADERS` | `""` | OTLP 请求头，逗号分隔 `k=v`，如 `Authorization=Bearer xxx` |
+| `service_name` | `OTEL_SERVICE_NAME` | `""` | OTel resource `service.name` |
+| `resource_attributes` | `OTEL_RESOURCE_ATTRIBUTES` | `""` | OTel resource attributes，逗号分隔 `k=v` |
+| `log_enabled` | `OTEL_CODEX_LOG_ENABLED` | `false` | 是否写本地 JSONL 日志 |
+| `log_dir` | `OTEL_CODEX_LOG_DIR` | `""` | JSONL 输出目录；空值时按 `~/.cache/opentelemetry.instrumentation.codex/sessions` 解析 |
+| `log_filename_format` | `OTEL_CODEX_LOG_FILENAME_FORMAT` | `"hook"` | `hook` → `codex-YYYY-MM-DD.jsonl`（按日滚动）；其他值 → `codex.jsonl.YYYYMMDD` |
+| `debug` | `CODEX_TELEMETRY_DEBUG` | `false` | 调试模式，trace 输出到 console；支持 `1` / `true`（**注意是 `CODEX_`,不是 `CLAUDE_`**） |
 
-示例 `codex.config.json`：
+> ⚠️ JSON key **必须使用上表小写形式**。把 `OTEL_EXPORTER_OTLP_ENDPOINT` 这类大写名字塞进 JSON 不会被读取（那是环境变量名）。
+
+#### 示例：仅 OTLP 上报
 
 ```json
 {
-  "OTEL_EXPORTER_OTLP_ENDPOINT": "https://your-otlp-endpoint/apm/trace/opentelemetry",
-  "OTEL_EXPORTER_OTLP_HEADERS": "x-arms-license-key=xxx,x-arms-project=yyy,x-cms-workspace=zzz",
-  "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-  "OTEL_RESOURCE_ATTRIBUTES": "service.name=my-codex-app",
-  "OTEL_SEMCONV_STABILITY_OPT_IN": "gen_ai_latest_experimental",
-  "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "SPAN_ONLY"
+  "otlp_endpoint": "https://your-otlp-endpoint:4318",
+  "otlp_headers": "Authorization=Bearer xxx",
+  "service_name": "my-codex-agent"
 }
 ```
 
-### otel-config.json（JSONL 日志输出）
-
-通过 `~/.codex/otel-config.json` 配置 JSONL 日志输出（用于与 ai-agent-collector 集成）：
+#### 示例：仅 JSONL 日志（与 ai-agent-collector / loongsuite-pilot 集成）
 
 ```json
 {
   "log_enabled": true,
-  "log_dir": "~/.ai-agent-collector/logs/codex",
+  "log_dir": "~/.loongsuite-pilot/logs/codex",
   "log_filename_format": "hook"
 }
 ```
 
-| 字段 | 说明 | 默认值 |
-|------|------|--------|
-| `log_enabled` | 是否启用 JSONL 日志输出 | `false` |
-| `log_dir` | 日志输出目录 | `~/.cache/opentelemetry.instrumentation.codex/sessions` |
-| `log_filename_format` | 日志文件名格式：`hook`（按日期滚动）或 `session`（按会话） | `session` |
-| `otlp_endpoint` | OTLP 后端地址（也可通过环境变量设置） | — |
-| `otlp_headers` | OTLP 请求头 | — |
-| `service_name` | 服务名 | — |
-| `debug` | 调试模式 | `false` |
+#### 示例：同时启用 OTLP 和 JSONL
 
-> `log_filename_format` 为 `hook` 时，文件名为 `codex-YYYY-MM-DD.jsonl`（按日期滚动）；为 `session` 时，文件名为 `<session-id>.jsonl`。
+两种输出独立，互不冲突。
+
+```json
+{
+  "otlp_endpoint": "https://your-otlp-endpoint:4318",
+  "otlp_headers": "Authorization=Bearer xxx",
+  "service_name": "my-codex-agent",
+  "log_enabled": true,
+  "log_dir": "/path/to/logs"
+}
+```
 
 ### 环境变量
 
-也可以直接设置环境变量：
+每个配置字段都有对应环境变量（见上表第二列）。
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://your-otlp-endpoint:4318"
 export OTEL_EXPORTER_OTLP_HEADERS="x-api-key=your-key"
-export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-export OTEL_RESOURCE_ATTRIBUTES="service.name=my-codex-app"
-```
-
-调试模式（输出到控制台）：
-
-```bash
 export CODEX_TELEMETRY_DEBUG=1
 ```
 
-### 服务名设置
+### OTel SDK 标准环境变量（仅环境变量生效）
 
-服务名按以下优先级确定：
+以下变量由依赖库 `@loongsuite/opentelemetry-util-genai` 直接从 `process.env` 读取，**写到 `otel-config.json` 不会被读到**，必须通过环境变量设置：
 
-1. `OTEL_SERVICE_NAME` 环境变量
-2. `OTEL_RESOURCE_ATTRIBUTES` 中的 `service.name`
-3. 默认值 `codex-agent`
+| 环境变量 | 用途 |
+|---|---|
+| `OTEL_SEMCONV_STABILITY_OPT_IN` | 启用最新 GenAI 实验语义；值必须是 `gen_ai_latest_experimental` |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | 控制 prompt/response 内容采集；值如 `SPAN_ONLY` |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | OTLP 协议；ARMS 必须 `http/protobuf` |
 
-### 启用消息内容采集
+#### 启用消息内容采集
 
 默认情况下 `gen_ai.input.messages` 和 `gen_ai.output.messages` 不包含在 span 中。启用方式：
 
-```json
-{
-  "OTEL_SEMCONV_STABILITY_OPT_IN": "gen_ai_latest_experimental",
-  "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "SPAN_ONLY"
-}
+```bash
+export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
 ```
 
 > 注意：值必须是 `gen_ai_latest_experimental`，仅使用 `gen_ai` 不生效。
+
+### 服务名优先级
+
+1. `service_name`（配置文件）/ `OTEL_SERVICE_NAME`（环境变量）
+2. `resource_attributes` / `OTEL_RESOURCE_ATTRIBUTES` 中的 `service.name=...`
+3. 默认值 `codex-agent`
 
 ---
 
 ## 接入阿里云 ARMS
 
+`~/.codex/otel-config.json`（小写 key）：
+
 ```json
 {
-  "OTEL_EXPORTER_OTLP_ENDPOINT": "https://proj-xxx.cn-hangzhou.log.aliyuncs.com/apm/trace/opentelemetry",
-  "OTEL_EXPORTER_OTLP_HEADERS": "x-arms-license-key=xxx,x-arms-project=yyy,x-cms-workspace=zzz",
-  "OTEL_EXPORTER_OTLP_PROTOCOL": "http/protobuf",
-  "OTEL_RESOURCE_ATTRIBUTES": "service.name=my-app",
-  "OTEL_SEMCONV_STABILITY_OPT_IN": "gen_ai_latest_experimental",
-  "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT": "SPAN_ONLY"
+  "otlp_endpoint": "https://proj-xxx.cn-hangzhou.log.aliyuncs.com/apm/trace/opentelemetry",
+  "otlp_headers": "x-arms-license-key=xxx,x-arms-project=yyy,x-cms-workspace=zzz",
+  "service_name": "my-app"
 }
 ```
 
-> 从 ARMS 控制台 → 接入中心 获取 `x-arms-license-key`、`x-arms-project` 和 `x-cms-workspace`。
+环境变量（SDK 标准变量，**只能**通过环境变量设置）：
 
-> 协议必须使用 `http/protobuf`，JSON 格式的 trace 数据不会被 ARMS SLS 正确索引。
+```bash
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf      # ARMS 必须用 protobuf,JSON 不会被索引
+export OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=SPAN_ONLY
+```
+
+> 从 ARMS 控制台 → 接入中心 获取 `x-arms-license-key`、`x-arms-project` 和 `x-cms-workspace`。
 
 ---
 
 ## CLI 命令
 
 ```bash
-otel-codex-hook install             # 将 hooks 注册到 ~/.codex/config.toml
-otel-codex-hook uninstall           # 从 config.toml 移除 hooks
-otel-codex-hook uninstall --purge   # 同时删除缓存和会话数据
+otel-codex-hook install             # 注册 5 个 hook 到 ~/.codex/hooks.json,trust hash 写入 ~/.codex/config.toml [hooks.state]
+otel-codex-hook install --quiet     # 抑制非错误 stderr(pilot 安装场景使用)
+otel-codex-hook uninstall           # 清理 hooks.json + config.toml 中的 trust 段
+otel-codex-hook uninstall --purge   # 同时删除 ~/.cache/opentelemetry.instrumentation.codex/
 otel-codex-hook check-env           # 检查配置状态（OTLP + JSONL 日志）
 otel-codex-hook show-config         # 打印 hook 配置（TOML/JSON 格式）
 ```
 
+> install 流程会同时:① 生成 `~/.cache/opentelemetry.instrumentation.codex/hook-entry.sh` Node wrapper;② 把 5 个 hook 写入 `~/.codex/hooks.json`(若已有用户其他 hook,append 而不覆盖);③ 计算 5 个 SHA-256 trust hash 写入 `~/.codex/config.toml` 的 `[hooks.state]` 段(BEGIN/END marker 包裹);④ 若 `[features] hooks = false` 改为 `true` 并 stderr 警告。
+
 ### Hook 事件
 
-| 命令 | Hook 事件 | 说明 |
-|------|-----------|------|
-| `session-start` | SessionStart | 初始化会话状态 |
-| `user-prompt-submit` | UserPromptSubmit | 记录用户输入 |
-| `pre-tool-use` | PreToolUse | 记录工具调用开始 |
-| `post-tool-use` | PostToolUse | 记录工具调用完成 |
-| `stop` | Stop | 解析 transcript、生成并导出 trace |
+| 命令 | Hook 事件 | 说明 | 写入 hooks.json 的 command |
+|------|-----------|------|----------|
+| `session-start` | SessionStart | 初始化会话状态 | `bash <hook-entry.sh> session-start` |
+| `user-prompt-submit` | UserPromptSubmit | 记录用户输入 | `bash <hook-entry.sh> user-prompt-submit` |
+| `pre-tool-use` | PreToolUse | 记录工具调用开始 | `bash <hook-entry.sh> pre-tool-use` |
+| `post-tool-use` | PostToolUse | 记录工具调用完成 | `bash <hook-entry.sh> post-tool-use` |
+| `stop` | Stop | 解析 transcript、生成并导出 trace + JSONL | `bash <hook-entry.sh> stop` |
+
+`<hook-entry.sh>` 是 install 时生成的 wrapper(`~/.cache/opentelemetry.instrumentation.codex/hook-entry.sh`),内含 Node.js 路径自动探测逻辑。
 
 ---
 
 ## 手动配置 Hooks
 
-如果自动安装未生效，手动添加到 `~/.codex/config.toml`：
+> ⚠️ **不推荐手动配置**。新版 codex(>= 2026-04-22 stable hooks)对每个 hook 启用了 trust 机制,需要在 `~/.codex/config.toml` 的 `[hooks.state."<key>"]` 写入与 hook 内容匹配的 SHA-256 `trusted_hash`,hash 算法包含绝对路径,不可手抄。请直接使用:
 
-```toml
-# OpenTelemetry instrumentation hooks
-[[hooks.SessionStart]]
-type = "command"
-command = "otel-codex-hook session-start"
-
-[[hooks.UserPromptSubmit]]
-type = "command"
-command = "otel-codex-hook user-prompt-submit"
-
-[[hooks.PreToolUse]]
-type = "command"
-command = "otel-codex-hook pre-tool-use"
-
-[[hooks.PostToolUse]]
-type = "command"
-command = "otel-codex-hook post-tool-use"
-
-[[hooks.Stop]]
-type = "command"
-command = "otel-codex-hook stop"
+```bash
+otel-codex-hook install
 ```
+
+旧版本插件(及更早 codex 版本)曾把 hooks 直接写到 `~/.codex/config.toml`,新版插件只读 `~/.codex/hooks.json` + `[hooks.state]` 中的 trust hash,这种老格式已**不再被识别**。如果你的 `config.toml` 含老格式段(`# OpenTelemetry instrumentation hooks` 注释 + `[[hooks.X]]` 数组段),`otel-codex-hook install` 会自动清理。
+
+排查 hook 是否生效:
+
+```bash
+codex                # 启动 TUI;若有 Untrusted/Modified hook 会自动弹出 "Hooks need review"
+                     # 或在输入框输入 /hooks 查看所有 hook trust 状态
+```
+
+更多诊断方法见 `loongsuite-pilot` 的 `~/.loongsuite-pilot/skills/references/codex-diagnostics.md`。
 
 ---
 
