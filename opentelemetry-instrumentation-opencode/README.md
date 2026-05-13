@@ -47,7 +47,10 @@ source ~/.bashrc   # 或 source ~/.zshrc
 
 | 参数 | 说明 |
 |------|------|
-| `--endpoint` | OTLP 上报地址（支持任意兼容后端）|
+| `--endpoint` | OTLP 基础上报地址，自动拼接 `/v1/traces`、`/v1/metrics`、`/v1/logs` |
+| `--traces-endpoint` | 独立的 Traces OTLP 端点（完整 URL，优先于 `--endpoint`）|
+| `--metrics-endpoint` | 独立的 Metrics OTLP 端点（完整 URL，优先于 `--endpoint`）|
+| `--logs-endpoint` | 独立的 Logs OTLP 端点（完整 URL，优先于 `--endpoint`）|
 | `--headers` | 认证请求头，逗号分隔，如 `authorization=Bearer xxx` |
 | `--service-name` | Trace 中的服务名（写入 `OTEL_SERVICE_NAME`）|
 | `--debug` | 启用控制台输出（无需后端，本地调试用）|
@@ -92,7 +95,10 @@ export default OtelPlugin
 
 | 环境变量 | 说明 | 默认值 |
 |----------|------|--------|
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP 上报端点（设置后自动启用遥测）| `http://localhost:4318` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP 基础上报端点（设置后自动启用遥测），自动拼接 `/v1/traces` 等路径 | `http://localhost:4318` |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | 独立的 Traces 端点（完整 URL，优先于基础端点）| — |
+| `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | 独立的 Metrics 端点（完整 URL，优先于基础端点）| — |
+| `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | 独立的 Logs 端点（完整 URL，优先于基础端点）| — |
 | `OTEL_EXPORTER_OTLP_HEADERS` | 请求头，逗号分隔 `key=value`，如认证 token | — |
 | `OTEL_RESOURCE_ATTRIBUTES` | 附加资源属性，如 `env=prod,team=ml` | — |
 | `OPENCODE_ENABLE_TELEMETRY` | 旧版：设为任意值启用遥测 | — |
@@ -165,10 +171,20 @@ export OTEL_DISABLE_METRICS="opencode.cost.usage,opencode.session.cost.total"
 | `gen_ai.agent.name` | Agent 显示名称 |
 | `gen_ai.agent.id` | Agent ID |
 | `gen_ai.request.model` | LLM 调用使用的模型 ID |
+| `gen_ai.response.model` | LLM 响应实际使用的模型 |
+| `gen_ai.response.finish_reasons` | 完成原因 JSON 数组（`["stop"]`、`["tool_calls"]`、`["error"]`）|
+| `gen_ai.response.time_to_first_token` | 首 token 延迟（纳秒）|
+| `gen_ai.response.reasoning_time` | 推理耗时（毫秒）|
 | `gen_ai.usage.input_tokens` | 消耗的输入 token 数 |
-| `gen_ci.usage.output_tokens` | 生成的输出 token 数 |
+| `gen_ai.usage.output_tokens` | 生成的输出 token 数 |
+| `gen_ai.usage.cache_read.input_tokens` | 缓存读取的输入 token 数 |
+| `gen_ai.usage.cache_creation.input_tokens` | 缓存创建的输入 token 数 |
+| `gen_ai.output.type` | 输出类型（固定 `text`）|
+| `gen_ai.system_instructions` | 系统提示词（JSON 格式）|
 | `gen_ai.input.messages` | JSON 格式的输入消息（按 `maxContentSize` 截断）|
 | `gen_ai.output.messages` | JSON 格式的输出消息（按 `maxContentSize` 截断）|
+| `gen_ai.user.id` | 用户标识（= sessionID）|
+| `gen_ai.framework` | 框架标识（固定 `opencode`）|
 | `gen_ai.tool.name` | 工具名称 |
 | `gen_ai.tool.call.arguments` | 工具调用参数（JSON）|
 | `gen_ai.tool.call.result` | 工具执行结果 |

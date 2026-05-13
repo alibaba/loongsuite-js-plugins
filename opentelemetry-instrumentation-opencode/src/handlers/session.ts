@@ -11,7 +11,7 @@ export function handleSessionCreated(e: EventSessionCreated, ctx: HandlerContext
   if (isMetricEnabled("session.count", ctx)) {
     ctx.instruments.sessionCounter.add(1, { ...ctx.commonAttrs, "session.id": sessionID })
   }
-  setBoundedMap(ctx.sessionTotals, sessionID, { startMs: createdAt, tokens: 0, cost: 0, messages: 0 })
+  setBoundedMap(ctx.sessionTotals, sessionID, { startMs: createdAt, tokens: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0, messages: 0 })
 
   ctx.logger.emit({
     severityNumber: SeverityNumber.INFO,
@@ -52,6 +52,17 @@ function sweepSession(sessionID: string, ctx: HandlerContext, error?: boolean, e
       active.span.end()
       ctx.activeMessageSpans.delete(key)
     }
+  }
+  // Clean up active step span for this session
+  const activeStep = ctx.activeStepSpans.get(sessionID)
+  if (activeStep) {
+    if (error) {
+      activeStep.span.setStatus({ code: SpanStatusCode.ERROR, message: "session ended" })
+    } else {
+      activeStep.span.setStatus({ code: SpanStatusCode.OK })
+    }
+    activeStep.span.end()
+    ctx.activeStepSpans.delete(sessionID)
   }
   const activeInvocation = ctx.activeInvocations.get(sessionID)
   if (activeInvocation) {
