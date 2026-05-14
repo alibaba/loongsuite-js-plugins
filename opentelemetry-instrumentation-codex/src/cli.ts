@@ -19,6 +19,22 @@ import { isLogEnabled, writeLogRecords } from "./logger.js";
 import { generateTurnLogRecords } from "./log-records.js";
 import { writeTrustedHashes, removeTrustBlock } from "./trust.js";
 
+// --- GenAI default env ---
+//
+// `@loongsuite/opentelemetry-util-genai` 库要求两个环境变量同时存在,才会把
+// `inputMessages` / `outputMessages` 写入 span 属性。普通 codex 用户不会主动
+// 设置,导致 trace 里看不到 prompt/response 文本。
+//
+// 这里在 hook 进程启动时为这两个变量提供默认值(若用户未显式设置)。
+// 若用户希望禁用,可显式 export 为 NO_CONTENT(或把 STABILITY_OPT_IN 设为
+// 非 gen_ai_latest_experimental 的值)。
+if (!process.env["OTEL_SEMCONV_STABILITY_OPT_IN"]) {
+  process.env["OTEL_SEMCONV_STABILITY_OPT_IN"] = "gen_ai_latest_experimental";
+}
+if (!process.env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"]) {
+  process.env["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"] = "SPAN_ONLY";
+}
+
 // --- stdin reading ---
 
 function readStdin(): Record<string, unknown> {

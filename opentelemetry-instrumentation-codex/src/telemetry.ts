@@ -51,6 +51,7 @@ function createProvider(serviceName: string): NodeTracerProvider {
   const resource = new Resource({
     "service.name": resolveServiceName(serviceName),
     [ACS_ARMS_SERVICE_FEATURE]: "genai_app",
+    "gen_ai.agent.system": "codex",
   });
   return new NodeTracerProvider({
     resource,

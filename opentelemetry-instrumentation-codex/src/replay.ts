@@ -41,6 +41,16 @@ export interface ReActStep {
   tools: ToolRecord[];
 }
 
+// --- Time conversion ---
+
+// SessionState/Turn/Step/Tool 内部的 timestamp 字段单位是"秒"(Date.now() / 1000)。
+// OTel JS SDK 的 tracer.startSpan({ startTime: number }) 把 number 解释为"毫秒",
+// 所以传给 handler 的所有时间值必须先 *1000。否则上报的 nano 时间戳会少 3 位
+// (cms2.0 平台会把它当成微秒导致查不到数据)。
+function toMs(epochSec: number): number {
+  return epochSec * 1000;
+}
+
 // --- Public API ---
 
 export function replaySession(
@@ -100,7 +110,7 @@ function replayTurn(
   const entryInv = createEntryInvocation({ sessionId });
   entryInv.inputMessages = turnInputMessages;
   entryInv.outputMessages = turnOutputMessages;
-  handler.startEntry(entryInv, undefined, turn.start_time);
+  handler.startEntry(entryInv, undefined, toMs(turn.start_time));
 
   const traceId = entryInv.span?.spanContext().traceId ?? null;
 
@@ -139,7 +149,7 @@ function replayTurn(
   });
   agentInv.inputMessages = turnInputMessages;
   agentInv.outputMessages = turnOutputMessages;
-  handler.startInvokeAgent(agentInv, entryInv.contextToken ?? undefined, turn.start_time);
+  handler.startInvokeAgent(agentInv, entryInv.contextToken ?? undefined, toMs(turn.start_time));
 
   // Replay STEP spans
   for (let si = 0; si < steps.length; si++) {
@@ -151,7 +161,7 @@ function replayTurn(
     handler.startReactStep(
       stepInv,
       agentInv.contextToken ?? undefined,
-      step.start_time,
+      toMs(step.start_time),
     );
 
     // LLM span within the step
@@ -172,8 +182,8 @@ function replayTurn(
     });
     llmInv.inputMessages = step.llm_input_messages;
     llmInv.outputMessages = step.llm_output_messages;
-    handler.startLlm(llmInv, stepInv.contextToken ?? undefined, step.llm_start_time);
-    handler.stopLlm(llmInv, step.llm_end_time);
+    handler.startLlm(llmInv, stepInv.contextToken ?? undefined, toMs(step.llm_start_time));
+    handler.stopLlm(llmInv, toMs(step.llm_end_time));
 
     // TOOL spans within the step
     for (const tool of step.tools) {
@@ -186,16 +196,16 @@ function replayTurn(
       handler.startExecuteTool(
         toolInv,
         stepInv.contextToken ?? undefined,
-        tool.start_time,
+        toMs(tool.start_time),
       );
-      handler.stopExecuteTool(toolInv, tool.end_time);
+      handler.stopExecuteTool(toolInv, toMs(tool.end_time));
     }
 
-    handler.stopReactStep(stepInv, step.end_time);
+    handler.stopReactStep(stepInv, toMs(step.end_time));
   }
 
-  handler.stopInvokeAgent(agentInv, turn.end_time);
-  handler.stopEntry(entryInv, turn.end_time);
+  handler.stopInvokeAgent(agentInv, toMs(turn.end_time));
+  handler.stopEntry(entryInv, toMs(turn.end_time));
 
   return traceId;
 }
