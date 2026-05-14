@@ -93,6 +93,11 @@ function replayTurn(
     ? turn.model
     : transcriptData?.model || "unknown";
 
+  // Session 级 system_instructions / tool.definitions(整个 session 共享,
+  // 同时贴在 AGENT span 与每个 LLM span 上,符合 ARMS GenAI 语义规范)。
+  const systemInstruction = transcriptData?.systemInstruction;
+  const toolDefinitions = transcriptData?.toolDefinitions;
+
   const turnInputMessages: InputMessage[] = [
     { role: "user", parts: [{ type: "text" as const, content: turn.prompt }] },
   ];
@@ -145,6 +150,8 @@ function replayTurn(
     inputTokens: totalInputTokens || undefined,
     outputTokens: totalOutputTokens || undefined,
     usageCacheReadInputTokens: totalCachedInputTokens || undefined,
+    systemInstruction,
+    toolDefinitions,
     attributes: { [GEN_AI_FRAMEWORK]: "codex" },
   });
   agentInv.inputMessages = turnInputMessages;
@@ -179,6 +186,8 @@ function replayTurn(
       outputTokens: tokenEvent?.outputTokens,
       usageCacheReadInputTokens: tokenEvent?.cachedInputTokens || undefined,
       finishReasons: finishReasons.length > 0 ? finishReasons : undefined,
+      systemInstruction,
+      toolDefinitions,
     });
     llmInv.inputMessages = step.llm_input_messages;
     llmInv.outputMessages = step.llm_output_messages;
