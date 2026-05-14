@@ -123,4 +123,19 @@ describe("telemetry", () => {
     delete process.env.OTEL_SERVICE_NAME;
     delete process.env.OTEL_RESOURCE_ATTRIBUTES;
   });
+
+  test("buildResourceAttrs always sets gen_ai.agent.system=claude", () => {
+    telemetry = require("../src/telemetry");
+    const attrs = telemetry.buildResourceAttrs();
+    expect(attrs["gen_ai.agent.system"]).toBe("claude");
+  });
+
+  test("gen_ai.agent.system cannot be overridden by OTEL_RESOURCE_ATTRIBUTES", () => {
+    process.env.OTEL_RESOURCE_ATTRIBUTES = "gen_ai.agent.system=other-system,foo=bar";
+    telemetry = require("../src/telemetry");
+    const attrs = telemetry.buildResourceAttrs();
+    expect(attrs["gen_ai.agent.system"]).toBe("claude");
+    expect(attrs["foo"]).toBe("bar");
+    delete process.env.OTEL_RESOURCE_ATTRIBUTES;
+  });
 });

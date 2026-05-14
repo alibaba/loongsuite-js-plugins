@@ -72,6 +72,7 @@ function parseResourceAttributes() {
 function buildResourceAttrs(serviceName) {
   const envAttrs = parseResourceAttributes();
   envAttrs["service.name"] = resolveServiceName(serviceName);
+  envAttrs["gen_ai.agent.system"] = "claude";
   return envAttrs;
 }
 
