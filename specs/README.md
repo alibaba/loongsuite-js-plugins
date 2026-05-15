@@ -11,12 +11,12 @@ specs/
 │   ├── spec.md                        # 用户 review 的规格(从 .specify/templates/otel-plugin/spec-template.md 派生)
 │   ├── plan.md                        # 实施计划
 │   ├── tasks.md                       # 任务清单(每条带 status: pending / in_progress / done)
-│   ├── state.json                     # 状态机:current_task / retry_count / errors
 │   ├── decisions.md                   # 自动决策日志(便于审计)
-│   ├── verification.json              # 各验证项 PASS / FAIL
-│   └── pr.json                        # 创建的 PR 编号、URL
+│   └── state.json                     # 单文件权威状态机(含 phase / current_task / retry_budget / verification / pr)
 └── 2xx-xxx/                           # 其他类型(预留)
 ```
+
+**关于 state.json**:它是单文件权威。verification 各 gate 结果(typecheck/build/unit/e2e/arms)+ PR 元数据(url/number/state/commit/head/base)都嵌入 `state.json`,无需独立的 `verification.json` / `pr.json`(早期模板曾要求这两个文件,首例实施[`100-instrumentation-qodercli`](100-instrumentation-qodercli/)证明分文件冗余且易不一致;已合并到 state.json)。完整 schema 见 [`auto-dev/skills/shared/state-machine.md`](https://gitlab.alibaba-inc.com/fangxiu/auto-dev/-/blob/main/skills/shared/state-machine.md)。
 
 `<AGENT>` 用目标 agent 短名:`gemini` / `aider` / 等。
 

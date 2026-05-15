@@ -161,12 +161,13 @@
 
 ### T27. tests/e2e/inmemory-span.test.js
 - 用 InMemorySpanExporter 跑一次 mock session
-- 断言 5 项:
+- 断言 6 项:
   1. span startTime epoch sec 与系统时间一致(Constitution C2)
   2. messages 入 span(Constitution C3)
   3. resource `gen_ai.agent.system=<AGENT>`(Constitution C4)
   4. system_instructions 在 AGENT 和 LLM(spec 1.4)
   5. tool.definitions 同上
+  6. **每个 LLM/TOOL/STEP/AGENT/ENTRY span `endTime - startTime > 0` 且与 mock 事件时间差对应**(Constitution C2,首例 qodercli 经验:防 hardcoded `endMs = startMs + 1` 类 bug)
 - 验收:全 PASS
 
 ### T28. 真实 ARMS 验证(对照 Constitution C6 第 5 关)

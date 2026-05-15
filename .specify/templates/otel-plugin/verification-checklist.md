@@ -51,7 +51,7 @@
 4. 调 replaySession → forceFlush
 5. `exporter.getFinishedSpans()` → 断言
 
-**5 项必须断言**:
+**6 项必须断言**:
 
 | # | 断言 | 对应 Constitution |
 |---|---|---|
@@ -60,8 +60,11 @@
 | 3 | resource attrs 含 `gen_ai.agent.system=<AGENT>` | C4 |
 | 4 | `gen_ai.system_instructions` 同时出现在 AGENT 和至少 1 个 LLM span,parsed 为 array | C3 |
 | 5 | `gen_ai.tool.definitions` 同上,parsed function 项 name 与 mock 一致 | C3 |
+| **6** | **每个 LLM/TOOL/STEP/AGENT/ENTRY span 的 `endTime - startTime > 0`,且与 mock 事件时间差对应**(防止 hardcoded `endMs = startMs + 1` 类 bug) | **C2** |
 
-**通过条件**:5/5 PASS。
+**通过条件**:6/6 PASS。
+
+> ⚠️ **加 V4.6 的背景**:首例实施 `100-instrumentation-qodercli` 在 V5 PASS 后才被用户发现 LLM span 全是 1ms duration,根因是 `replay.ts:renderLlm` 把 `endMs = startMs + 1` 硬编码(误以为每个 LLM event 只有一个时间戳)。如果 V4 当时就检查了 duration 就能在 e2e 阶段抓到。现已固化为模板要求。
 
 ---
 
