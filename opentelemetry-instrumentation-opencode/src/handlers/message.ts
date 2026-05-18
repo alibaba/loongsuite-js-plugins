@@ -15,6 +15,32 @@ import {
 } from "../util.ts"
 import type { ActiveInvocation, ActiveMessageSpan, HandlerContext } from "../types.ts"
 import type { AttributeValue } from "@opentelemetry/api"
+import { appendEvent } from "../log-writer.ts"
+import * as crypto from "node:crypto"
+
+/** Extracts trace context from a span for log event fields. Returns empty strings if unavailable. */
+// function extractTraceContext(ctx: HandlerContext, sessionID: string): { trace_id: string; span_id: string; parent_span_id: string } {
+//   const invocation = ctx.activeInvocations.get(sessionID)
+//   const msgSpanKey = [...ctx.activeMessageSpans.entries()].find(([k]) => k.startsWith(sessionID + ":"))?.[1]
+//   const span = msgSpanKey?.span
+//   if (span) {
+//     const sc = span.spanContext()
+//     const parentSpanId = invocation?.agentSpan?.spanContext().spanId ?? ""
+//     return { trace_id: sc.traceId, span_id: sc.spanId, parent_span_id: parentSpanId }
+//   }
+//   if (invocation) {
+//     const sc = invocation.agentSpan.spanContext()
+//     return { trace_id: sc.traceId, span_id: "", parent_span_id: sc.spanId }
+//   }
+//   return { trace_id: "", span_id: "", parent_span_id: "" }
+// }
+
+/** Computes SHA-256 hash (first 16 hex chars) of input messages for deduplication. */
+function computeMessagesHash(messages: unknown[]): string {
+  if (messages.length === 0) return ""
+  const raw = JSON.stringify(messages)
+  return crypto.createHash("sha256").update(raw).digest("hex").slice(0, 16)
+}
 
 /** Merges deferred text parts (no `time.start` yet) into a newly opened LLM span. */
 function flushDeferredMessageText(sessionID: string, messageID: string, active: ActiveMessageSpan, ctx: HandlerContext) {
@@ -324,6 +350,61 @@ export function handleMessageUpdated(e: EventMessageUpdated, ctx: HandlerContext
     }
     span.end(assistant.time.completed)
     ctx.activeMessageSpans.delete(msgKey)
+
+    // --- Event log: llm.request + llm.response (paired write at completion) ---
+    const llmFinishReason = hasError ? "error" : (active.toolCalls.length > 0 ? "tool_calls" : "stop")
+    const llmTraceCtx = { trace_id: span.spanContext().traceId, span_id: span.spanContext().spanId, parent_span_id: "" }
+    const invocationForLog = ctx.activeInvocations.get(sessionID)
+    if (invocationForLog) {
+      llmTraceCtx.parent_span_id = invocationForLog.agentSpan.spanContext().spanId
+    }
+
+    // Write llm.request (using startTimeMs as the request time)
+    const logInputMsgs = truncateMessages(buildInputMessages(sessionID, ctx), ctx.maxContentSize)
+    const userPrompt = ctx.pendingUserPrompts.get(sessionID)
+    const inputDelta = userPrompt
+      ? [{ role: "user", parts: [{ type: "text", content: userPrompt }] }]
+      : undefined
+    appendEvent({
+      "time_unix_nano": String(active.startTimeMs * 1_000_000),
+      "event.name": "llm.request",
+      "gen_ai.session.id": sessionID,
+      "gen_ai.provider.name": providerID,
+      "gen_ai.request.model": modelID,
+      "turn.id": active.invocationID,
+      "step.id": String(active.stepRound),
+      "message.role": "user",
+      "gen_ai.input.messages": logInputMsgs.length > 0 ? logInputMsgs : undefined,
+      "gen_ai.input.messages_delta": inputDelta,
+      "gen_ai.input.messages_hash": logInputMsgs.length > 0 ? computeMessagesHash(logInputMsgs) : undefined,
+      ...(llmTraceCtx.trace_id ? { trace_id: llmTraceCtx.trace_id } : {}),
+      ...(llmTraceCtx.span_id ? { span_id: llmTraceCtx.span_id } : {}),
+      ...(llmTraceCtx.parent_span_id ? { parent_span_id: llmTraceCtx.parent_span_id } : {}),
+    })
+
+    // Write llm.response
+    appendEvent({
+      "time_unix_nano": String(assistant.time.completed * 1_000_000),
+      "event.name": "llm.response",
+      "gen_ai.session.id": sessionID,
+      "gen_ai.provider.name": providerID,
+      "gen_ai.request.model": modelID,
+      "gen_ai.response.model": modelID,
+      "gen_ai.response.finish_reasons": [llmFinishReason],
+      "gen_ai.usage.input_tokens": assistant.tokens.input,
+      "gen_ai.usage.output_tokens": assistant.tokens.output,
+      "gen_ai.usage.cache_read.input_tokens": assistant.tokens.cache.read,
+      "gen_ai.usage.cache_creation.input_tokens": assistant.tokens.cache.write,
+      "gen_ai.usage.total_tokens": totalTokens,
+      "cost.total": assistant.cost,
+      "gen_ai.output.messages": outputMsgsJson ? JSON.parse(outputMsgsJson) : undefined,
+      "turn.id": active.invocationID,
+      "step.id": String(active.stepRound),
+      ...(hasError ? { "is_error": true, "error.message": errorSummary(assistant.error) } : {}),
+      ...(llmTraceCtx.trace_id ? { trace_id: llmTraceCtx.trace_id } : {}),
+      ...(llmTraceCtx.span_id ? { span_id: llmTraceCtx.span_id } : {}),
+      ...(llmTraceCtx.parent_span_id ? { parent_span_id: llmTraceCtx.parent_span_id } : {}),
+    })
 
     const invocation = ctx.activeInvocations.get(sessionID)
     if (invocation) {
@@ -635,6 +716,47 @@ export function handleMessagePartUpdated(e: EventMessagePartUpdated, ctx: Handle
     duration_ms,
     success,
   })
+
+  // --- Event log: tool.call + tool.result (paired write at completion) ---
+  const toolInvocation = ctx.activeInvocations.get(toolPart.sessionID)
+  const toolStep = ctx.activeStepSpans.get(toolPart.sessionID)
+  const toolTraceSpan = activeToolSpan
+
+  // Write tool.call (using cached startMs as the call time)
+  const toolCallRawInput = span
+    ? (typeof toolPart.state.input === "string" ? tryParseJson(toolPart.state.input) : toolPart.state.input)
+    : undefined
+  appendEvent({
+    "time_unix_nano": String(start * 1_000_000),
+    "event.name": "tool.call",
+    "gen_ai.session.id": toolPart.sessionID,
+    "gen_ai.tool.name": toolPart.tool,
+    "gen_ai.tool.call.id": toolPart.callID,
+    "gen_ai.tool.call.arguments": toolCallRawInput,
+    "turn.id": toolInvocation?.invocationID ?? "",
+    "step.id": String(toolStep?.round ?? toolInvocation?.nextStepRound ?? 1),
+    ...(toolTraceSpan?.span ? { trace_id: toolTraceSpan.span.spanContext().traceId, span_id: toolTraceSpan.span.spanContext().spanId } : {}),
+    ...(toolInvocation ? { parent_span_id: (toolStep?.span ?? toolInvocation.agentSpan).spanContext().spanId } : {}),
+  })
+
+  // Write tool.result
+  appendEvent({
+    "time_unix_nano": String(end * 1_000_000),
+    "event.name": "tool.result",
+    "gen_ai.session.id": toolPart.sessionID,
+    "gen_ai.tool.name": toolPart.tool,
+    "gen_ai.tool.call.id": toolPart.callID,
+    "tool.exec.id": crypto.randomUUID(),
+    "tool.result.status": success ? "success" : "error",
+    "tool.result.duration_ms": duration_ms,
+    "gen_ai.tool.call.result": success ? tryParseJson(truncatedOutput) : undefined,
+    ...(success ? {} : { "is_error": true, "error.type": "_OTHER", "error.message": (toolPart.state as { error: string }).error }),
+    "turn.id": toolInvocation?.invocationID ?? "",
+    "step.id": String(toolStep?.round ?? toolInvocation?.nextStepRound ?? 1),
+    ...(toolTraceSpan?.span ? { trace_id: toolTraceSpan.span.spanContext().traceId, span_id: toolTraceSpan.span.spanContext().spanId } : {}),
+    ...(toolInvocation ? { parent_span_id: (toolStep?.span ?? toolInvocation.agentSpan).spanContext().spanId } : {}),
+  })
+
   return ctx.log(success ? "info" : "error", "otel: tool_result", {
     sessionID: toolPart.sessionID,
     tool_name: toolPart.tool,
