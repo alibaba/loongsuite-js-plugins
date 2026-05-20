@@ -47,6 +47,13 @@ const SPAN_KIND_ATTR =
     : "gen_ai.span.kind";
 const NEEDS_DIALECT_ATTR = _dialect === "ALIBABA_GROUP" || _sunfireDetected;
 
+function generateTraceId() {
+  return crypto.randomBytes(16).toString("hex");
+}
+function generateSpanId() {
+  return crypto.randomBytes(8).toString("hex");
+}
+
 // ---------------------------------------------------------------------------
 // 语言检测 / Language detection
 // ---------------------------------------------------------------------------
@@ -400,13 +407,16 @@ function enrichChildStateWithTranscript(childState) {
     const llmEvents = parseClaudeTranscript(childState.transcript_path, startTime, stopTime);
     if (llmEvents.length > 0) {
       alignWithHookEvents(llmEvents, childState.events, stopTime);
-      const getSortKey = (e) => {
-        if (e.type === "llm_call" && e.request_start_time) return e.request_start_time;
-        return e.timestamp || 0;
-      };
-      childState.events = [...childState.events, ...llmEvents].sort(
-        (a, b) => getSortKey(a) - getSortKey(b)
-      );
+      const validLlmEvents = llmEvents.filter(e => !e._discarded);
+      if (validLlmEvents.length > 0) {
+        const getSortKey = (e) => {
+          if (e.type === "llm_call" && e.request_start_time) return e.request_start_time;
+          return e.timestamp || 0;
+        };
+        childState.events = [...childState.events, ...validLlmEvents].sort(
+          (a, b) => getSortKey(a) - getSortKey(b)
+        );
+      }
     }
   } catch (err) {
     debug(`subagent transcript parse failed: ${err?.message || String(err)}`);
@@ -516,7 +526,7 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
         responseModelName: model,
         provider: "anthropic",
         responseId: ev.response_id || null,
-        inputTokens: ev.input_tokens || 0,
+        inputTokens: (ev.input_tokens || 0) + (ev.cache_read_input_tokens || 0) + (ev.cache_creation_input_tokens || 0),
         outputTokens: ev.output_tokens || 0,
         usageCacheReadInputTokens: ev.cache_read_input_tokens || 0,
         usageCacheCreationInputTokens: ev.cache_creation_input_tokens || 0,
@@ -533,6 +543,8 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
       }
 
       handler.startLlm(llmInv, currentStepInv.contextToken, hrTime(requestStart));
+      ev._otel_span_id = llmInv.span?.spanContext().spanId || null;
+      ev._otel_step_span_id = currentStepInv?.span?.spanContext().spanId || null;
 
       if (ev.is_error) {
         handler.failLlm(llmInv, {
@@ -626,6 +638,8 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
           attributes: sAttrs("TOOL"),
         });
         handler.startExecuteTool(toolInv, resolveParentContext(evTs), hrTime(startTs));
+        ev._otel_span_id = toolInv.span?.spanContext().spanId || null;
+        ev._otel_step_span_id = currentStepInv?.span?.spanContext().spanId || null;
         const toolErr = extractToolError(toolResponse);
         if (toolErr) handler.failExecuteTool(toolInv, toolErr, hrTime(evTs));
         else handler.stopExecuteTool(toolInv, hrTime(evTs));
@@ -713,7 +727,7 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
         if (agentId && openSubagentsByAgentId[agentId]) {
           const entry = openSubagentsByAgentId[agentId];
           entry.stopTs = evTs;
-          entry.agentInv.inputTokens = ev.input_tokens || 0;
+          entry.agentInv.inputTokens = (ev.input_tokens || 0) + (ev.cache_read_input_tokens || 0) + (ev.cache_creation_input_tokens || 0);
           entry.agentInv.outputTokens = ev.output_tokens || 0;
           entry.agentInv.usageCacheReadInputTokens = ev.cache_read_input_tokens || 0;
           entry.agentInv.usageCacheCreationInputTokens = ev.cache_creation_input_tokens || 0;
@@ -736,8 +750,12 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
         const childMetrics = childState.metrics || {};
         const containerInv = createInvokeAgentInvocation("anthropic", {
           agentName: "subagent",
-          inputTokens: childMetrics.input_tokens || ev.input_tokens || 0,
+          inputTokens: (childMetrics.input_tokens || ev.input_tokens || 0)
+            + (childMetrics.cache_read_input_tokens || ev.cache_read_input_tokens || 0)
+            + (childMetrics.cache_creation_input_tokens || ev.cache_creation_input_tokens || 0),
           outputTokens: childMetrics.output_tokens || ev.output_tokens || 0,
+          usageCacheReadInputTokens: childMetrics.cache_read_input_tokens || ev.cache_read_input_tokens || 0,
+          usageCacheCreationInputTokens: childMetrics.cache_creation_input_tokens || ev.cache_creation_input_tokens || 0,
           finishReasons: [ev.stop_reason || "end_turn"],
           requestModel: childState.model || "unknown",
           attributes: {
@@ -766,7 +784,7 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
         if (ce.type !== "llm_call") continue;
         const ceTs = ce.timestamp || 0;
         if (ceTs >= childStart && ceTs <= childStop) {
-          inv.inputTokens = (inv.inputTokens || 0) + (ce.input_tokens || 0);
+          inv.inputTokens = (inv.inputTokens || 0) + (ce.input_tokens || 0) + (ce.cache_read_input_tokens || 0) + (ce.cache_creation_input_tokens || 0);
           inv.outputTokens = (inv.outputTokens || 0) + (ce.output_tokens || 0);
           inv.usageCacheReadInputTokens = (inv.usageCacheReadInputTokens || 0) + (ce.cache_read_input_tokens || 0);
           inv.usageCacheCreationInputTokens = (inv.usageCacheCreationInputTokens || 0) + (ce.cache_creation_input_tokens || 0);
@@ -799,6 +817,8 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
     const orphanParent = orphanContextMap[toolUseId] || currentStepInv?.contextToken || parentCtx;
     const endTs = orphanEndTimeMap[toolUseId] || stopTime;
     handler.startExecuteTool(toolInv, orphanParent, hrTime(startTs));
+    preEv._otel_span_id = toolInv.span?.spanContext().spanId || null;
+    preEv._otel_step_span_id = currentStepInv?.span?.spanContext().spanId || null;
     handler.stopExecuteTool(toolInv, hrTime(endTs));
   }
 
@@ -811,11 +831,15 @@ function replayEventsAsSpans(handler, tracer, events, parentCtx, stopTime, sessi
 // generateTurnLogRecords — JSONL log records for a single turn
 // ---------------------------------------------------------------------------
 
-function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, traceId) {
+function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, spanCtx) {
+  if (!spanCtx || typeof spanCtx === "string") {
+    spanCtx = { traceId: spanCtx || generateTraceId(), entrySpanId: generateSpanId(), agentSpanId: generateSpanId() };
+  }
   const records = [];
   const turnId = `${sessionId}:t${turnIndex + 1}`;
   let stepRound = 0;
   let currentStepId = null;
+  let currentStepSpanId = null;
   let runningHash = prevHash;
   let prevInputMsgs = [];
 
@@ -823,7 +847,7 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
   try { userId = os.userInfo().username; } catch { userId = ""; }
 
   const base = {
-    trace_id: traceId || null,
+    trace_id: spanCtx.traceId || null,
     "session.id": sessionId,
     "turn.id": turnId,
     "user.id": userId,
@@ -836,6 +860,8 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
       "event.id": crypto.randomUUID(),
       "event.name": "llm.request",
       ...base,
+      span_id: spanCtx.agentSpanId || null,
+      parent_span_id: spanCtx.entrySpanId || null,
       "message.role": "user",
       "input.messages_delta": JSON.stringify(
         [{ role: "user", parts: [{ type: "text", content: turn.prompt }] }]
@@ -856,6 +882,8 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
     if (ev.type === "llm_call") {
       stepRound++;
       currentStepId = `${turnId}:s${stepRound}`;
+      currentStepSpanId = ev._otel_step_span_id || generateSpanId();
+      const llmSpanId = ev._otel_span_id || generateSpanId();
       const responseId = ev.response_id || `${currentStepId}:r`;
       const protocol = ev.protocol || "anthropic";
 
@@ -876,6 +904,8 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
         "event.id": crypto.randomUUID(),
         "event.name": "llm.request",
         ...base,
+        span_id: llmSpanId,
+        parent_span_id: currentStepSpanId,
         "step.id": currentStepId,
         "response.id": responseId,
         "agent.id": sessionId,
@@ -892,13 +922,18 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
 
       records.push(requestRecord);
 
-      const inputTokens = ev.input_tokens || 0;
+      const apiInputTokens = ev.input_tokens || 0;
+      const cacheRead = ev.cache_read_input_tokens || 0;
+      const cacheCreation = ev.cache_creation_input_tokens || 0;
+      const inputTokens = apiInputTokens + cacheRead + cacheCreation;
       const outputTokens = ev.output_tokens || 0;
       const responseRecord = {
         time_unix_nano: Math.round(evTs * 1e9),
         "event.id": crypto.randomUUID(),
         "event.name": "llm.response",
         ...base,
+        span_id: llmSpanId,
+        parent_span_id: currentStepSpanId,
         "step.id": currentStepId,
         "response.id": responseId,
         "message.role": "assistant",
@@ -908,8 +943,8 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
         "response.finish_reasons": ev.stop_reason || "stop",
         "usage.input_tokens": inputTokens,
         "usage.output_tokens": outputTokens,
-        "usage.cache_write_tokens": ev.cache_creation_input_tokens || 0,
-        "usage.cache_read_tokens": ev.cache_read_input_tokens || 0,
+        "usage.cache_write_tokens": cacheCreation,
+        "usage.cache_read_tokens": cacheRead,
         "usage.total_tokens": inputTokens + outputTokens,
         "output.messages": JSON.stringify(
           convertOutputMessages(ev.output_content, ev.stop_reason)
@@ -933,12 +968,16 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
       const preEv = preToolUseMap[ev.tool_use_id] || {};
       const effectiveName = preEv.tool_name || toolName;
       const effectiveInput = preEv.tool_input || {};
+      const toolSpanId = ev._otel_span_id || generateSpanId();
+      const parentStepSpanId = ev._otel_step_span_id || currentStepSpanId;
 
       records.push({
         time_unix_nano: Math.round((preEv.timestamp || evTs) * 1e9),
         "event.id": crypto.randomUUID(),
         "event.name": "tool.call",
         ...base,
+        span_id: toolSpanId,
+        parent_span_id: parentStepSpanId,
         "step.id": currentStepId || turnId,
         "message.role": "tool",
         "tool.name": effectiveName,
@@ -953,6 +992,8 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
         "event.id": crypto.randomUUID(),
         "event.name": "tool.result",
         ...base,
+        span_id: toolSpanId,
+        parent_span_id: parentStepSpanId,
         "step.id": currentStepId || turnId,
         "message.role": "tool",
         "tool.name": effectiveName,
@@ -982,12 +1023,16 @@ function generateTurnLogRecords(turn, turnIndex, sessionId, model, prevHash, tra
     if (consumedIds.has(toolUseId)) continue;
     const toolName = preEv.tool_name || "unknown";
     if (toolName === "Agent" || toolName === "agent") continue;
+    const orphanSpanId = preEv._otel_span_id || generateSpanId();
+    const orphanParentSpanId = preEv._otel_step_span_id || currentStepSpanId || spanCtx.agentSpanId;
     records.push({
       time_unix_nano: Math.round((preEv.timestamp || turn.endTime) * 1e9),
       "event.id": crypto.randomUUID(),
       "event.name": "tool.call",
       ...base,
       "step.id": currentStepId || turnId,
+      span_id: orphanSpanId,
+      parent_span_id: orphanParentSpanId,
       "message.role": "tool",
       "tool.name": toolName,
       "tool.call.id": toolUseId,
@@ -1050,11 +1095,14 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
   }
 
   if (llmEvents.length > 0) {
-    const getSortKey = (e) => {
-      if (e.type === "llm_call" && e.request_start_time) return e.request_start_time;
-      return e.timestamp || 0;
-    };
-    allEvents = [...allEvents, ...llmEvents].sort((a, b) => getSortKey(a) - getSortKey(b));
+    const validLlmEvents = llmEvents.filter(e => !e._discarded);
+    if (validLlmEvents.length > 0) {
+      const getSortKey = (e) => {
+        if (e.type === "llm_call" && e.request_start_time) return e.request_start_time;
+        return e.timestamp || 0;
+      };
+      allEvents = [...allEvents, ...validLlmEvents].sort((a, b) => getSortKey(a) - getSortKey(b));
+    }
   }
 
   // Split into per-turn groups
@@ -1066,6 +1114,7 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
 
   // Export each turn as an independent trace (skip in log-only mode)
   const entryInvs = [];
+  const agentInvs = [];
   if (!logOnly) {
     const handler = new ExtendedTelemetryHandler({ tracerProvider: provider });
     const tracer = trace.getTracer("opentelemetry-instrumentation-claude");
@@ -1081,10 +1130,13 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
       let turnModel = state.model || "unknown";
       const llmEvents = turn.events.filter(e => e.type === "llm_call");
       for (const lev of llmEvents) {
-        turnInputTokens += lev.input_tokens || 0;
+        const apiIn = lev.input_tokens || 0;
+        const cR = lev.cache_read_input_tokens || 0;
+        const cC = lev.cache_creation_input_tokens || 0;
+        turnInputTokens += apiIn + cR + cC;
         turnOutputTokens += lev.output_tokens || 0;
-        turnCacheRead += lev.cache_read_input_tokens || 0;
-        turnCacheCreate += lev.cache_creation_input_tokens || 0;
+        turnCacheRead += cR;
+        turnCacheCreate += cC;
         if (lev.model) turnModel = lev.model;
       }
 
@@ -1125,6 +1177,7 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
         attributes: sessionAttrs(sessionId, "AGENT"),
       });
       handler.startInvokeAgent(agentInv, entryInv.contextToken, hrTime(turn.startTime));
+      agentInvs.push(agentInv);
 
       // Replay this turn's events as child spans
       replayEventsAsSpans(handler, tracer, turn.events, agentInv.contextToken, turn.endTime, sessionId);
@@ -1143,16 +1196,24 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
 
       for (let i = 0; i < turns.length; i++) {
         const turn = turns[i];
-        let turnTraceId = null;
+        let spanCtx;
         if (!logOnly && entryInvs[i]) {
           try {
             const entrySpan = trace.getSpan(entryInvs[i].contextToken);
-            if (entrySpan) turnTraceId = entrySpan.spanContext().traceId;
-          } catch {}
+            spanCtx = {
+              traceId: entrySpan?.spanContext().traceId || generateTraceId(),
+              entrySpanId: entrySpan?.spanContext().spanId || generateSpanId(),
+              agentSpanId: agentInvs[i]?.span?.spanContext().spanId || generateSpanId(),
+            };
+          } catch {
+            spanCtx = { traceId: generateTraceId(), entrySpanId: generateSpanId(), agentSpanId: generateSpanId() };
+          }
+        } else {
+          spanCtx = { traceId: generateTraceId(), entrySpanId: generateSpanId(), agentSpanId: generateSpanId() };
         }
 
         const { records, hash } = generateTurnLogRecords(
-          turn, i, sessionId, state.model || "unknown", logHash, turnTraceId
+          turn, i, sessionId, state.model || "unknown", logHash, spanCtx
         );
         allLogRecords.push(...records);
         logHash = hash;
@@ -1169,7 +1230,8 @@ async function exportSessionTrace(state, stopReason = "end_turn") {
   }
 
   const totalIn = turns.reduce((s, t) =>
-    s + t.events.filter(e => e.type === "llm_call").reduce((a, e) => a + (e.input_tokens || 0), 0), 0);
+    s + t.events.filter(e => e.type === "llm_call").reduce((a, e) =>
+      a + (e.input_tokens || 0) + (e.cache_read_input_tokens || 0) + (e.cache_creation_input_tokens || 0), 0), 0);
   const totalOut = turns.reduce((s, t) =>
     s + t.events.filter(e => e.type === "llm_call").reduce((a, e) => a + (e.output_tokens || 0), 0), 0);
   console.error(
@@ -1483,11 +1545,16 @@ async function cmdInstall(opts = {}) {
 
   try {
     const targets = [];
-    if (opts.user !== false) {
-      targets.push(path.join(os.homedir(), ".claude", "settings.json"));
-    }
-    if (opts.project) {
-      targets.push(path.join(process.cwd(), ".claude", "settings.json"));
+    if (opts.settingsPath) {
+      targets.push(opts.settingsPath);
+    } else {
+      if (opts.user !== false) {
+        const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+        targets.push(path.join(configDir, "settings.json"));
+      }
+      if (opts.project) {
+        targets.push(path.join(process.cwd(), ".claude", "settings.json"));
+      }
     }
     if (targets.length === 0 && !quiet) {
       console.error(installMsg("未指定目标 - 请使用 --user 或 --project。", "No target specified - use --user or --project."));
@@ -1575,8 +1642,8 @@ function cmdCheckEnv() {
   } else {
     console.error(
       msg(
-        "❌ 未配置遥测后端。\n设置 OTEL_EXPORTER_OTLP_ENDPOINT 或配置文件 ~/.claude/otel-config.json",
-        "❌ No telemetry backend configured.\nSet OTEL_EXPORTER_OTLP_ENDPOINT or config file ~/.claude/otel-config.json"
+        `❌ 未配置遥测后端。\n设置 OTEL_EXPORTER_OTLP_ENDPOINT 或配置文件 ${config.CONFIG_PATH}`,
+        `❌ No telemetry backend configured.\nSet OTEL_EXPORTER_OTLP_ENDPOINT or config file ${config.CONFIG_PATH}`
       )
     );
     process.exit(1);
@@ -1629,7 +1696,10 @@ function cmdUninstall(opts = {}) {
   console.error(msg("==> 清理 hooks 配置...", "==> Cleaning up hooks config..."));
   const targets = [];
   if (opts.project) targets.push(path.join(process.cwd(), ".claude", "settings.json"));
-  if (opts.user !== false) targets.push(path.join(os.homedir(), ".claude", "settings.json"));
+  if (opts.user !== false) {
+    const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+    targets.push(path.join(configDir, "settings.json"));
+  }
   for (const t of targets) uninstallFromSettings(t);
   console.error("");
 

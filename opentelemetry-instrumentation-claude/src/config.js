@@ -7,7 +7,10 @@ const fs = require("fs");
 const path = require("path");
 const os = require("os");
 
-const CONFIG_PATH = path.join(os.homedir(), ".claude", "otel-config.json");
+const CONFIG_PATH = path.join(
+  process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude"),
+  "otel-config.json"
+);
 
 let _configCache = undefined;
 

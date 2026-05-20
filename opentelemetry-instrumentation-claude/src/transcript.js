@@ -316,36 +316,42 @@ function alignWithHookEvents(llmEvents, hookEvents, stopTime) {
   }
 
   // Strategy: each llm_call ends just before the next pre_tool_use,
-  // and starts just after the previous post_tool_use (or user_prompt_submit)
-  let preToolIdx = 0;
+  // and starts just after the previous post_tool_use (or user_prompt_submit).
+  // Only pair the last N events (N = expected LLM call count) to avoid
+  // historical transcript data stealing anchors from the current turn.
   const preToolAnchors = anchors.filter(a => a.type === "pre_tool");
   const startAnchors = anchors.filter(a => a.type === "start" || a.type === "post_tool");
 
-  for (let i = 0; i < llmEvents.length; i++) {
+  const expectedCount = preToolAnchors.length + 1;
+  const startIdx = Math.max(0, llmEvents.length - expectedCount);
+
+  for (let i = 0; i < startIdx; i++) {
+    llmEvents[i]._discarded = true;
+  }
+
+  let preToolIdx = 0;
+  for (let i = startIdx; i < llmEvents.length; i++) {
     const ev = llmEvents[i];
+    const relIdx = i - startIdx;
 
     // request_start_time: use the most recent post_tool or user_prompt_submit before this call
-    if (i === 0 && startAnchors.length > 0) {
+    if (relIdx === 0 && startAnchors.length > 0) {
       ev.request_start_time = startAnchors[0].ts;
-    } else if (i > 0) {
-      // Find the post_tool_use that occurred after the previous llm_call
+    } else if (relIdx > 0) {
       const prevEnd = llmEvents[i - 1].timestamp;
       const postAfterPrev = startAnchors.find(a => a.ts >= prevEnd);
       if (postAfterPrev) {
         ev.request_start_time = postAfterPrev.ts;
       } else {
-        // PostToolUse dropped — place after prevEnd (= PreToolUse timestamp)
-        // so this llm_call sorts after the orphan PreToolUse hook event
         ev.request_start_time = prevEnd + 0.001;
       }
     }
 
     // timestamp (response end): use the next pre_tool_use if this is not the last call
-    if (i < llmEvents.length - 1 && preToolIdx < preToolAnchors.length) {
+    if (relIdx < expectedCount - 1 && preToolIdx < preToolAnchors.length) {
       ev.timestamp = preToolAnchors[preToolIdx].ts;
       preToolIdx++;
     } else {
-      // Last llm_call — use stopTime or last anchor
       ev.timestamp = stopTime;
     }
 
