@@ -32,7 +32,7 @@
 | `gen_ai.provider.name`(如 `openai` / `anthropic`) | 必须 |
 | `gen_ai.request.model` / `gen_ai.response.model` | 必须 / 推荐 |
 | `gen_ai.response.finish_reasons` | 推荐 |
-| `gen_ai.usage.input_tokens` / `output_tokens` / `total_tokens` | 推荐(三个都要) |
+| `gen_ai.usage.input_tokens` / `output_tokens` / `total_tokens` | 推荐(三个都要;⚠️ Anthropic provider 见 C11) |
 | `gen_ai.usage.cache_creation.input_tokens` / `cache_read.input_tokens` | 推荐(若 provider 支持) |
 | `gen_ai.input.messages` / `gen_ai.output.messages` | 内容采集开启时(C3) |
 | `gen_ai.system_instructions` / `gen_ai.tool.definitions` | 内容采集开启时(C3) |
@@ -195,6 +195,70 @@ EOF
 
 ---
 
+## C11. Anthropic provider 下 input_tokens 必须为全量值
+
+Anthropic API 返回的 `usage.input_tokens` **仅为未命中 prompt cache 的 token 数**。当 agent 启用 prompt caching(Claude Code 默认全量 caching),该值可能只是真实值的 1/100。
+
+**强制做法**:当 LLM provider 为 Anthropic 时,上报到 OTel 和 JSONL 的 `gen_ai.usage.input_tokens` 必须为:
+
+```
+totalInput = api_input_tokens + cache_read_input_tokens + cache_creation_input_tokens
+```
+
+`gen_ai.usage.total_tokens` 同样使用全量 input 计算。
+
+**适用范围**:所有使用 Anthropic API 的 agent 插件(claude、openclaw、未来新增)。OpenAI 等 provider 的 `prompt_tokens` 已含全量,无需特殊处理。
+
+**踩过的坑**:claude 插件早期直接使用 `ev.input_tokens`,导致 ARMS 上看到的 token 消耗比实际低 10-100 倍,无法用于成本分析。
+
+---
+
+## C12. JSONL 日志必须包含 trace_id / span_id / parent_span_id
+
+每条 JSONL record 均需含 W3C Trace Context 格式的关联 ID:
+
+| 字段 | 格式 | 说明 |
+|---|---|---|
+| `trace_id` | 32 位 hex(16 bytes) | 同一 turn 内所有 record 共享 |
+| `span_id` | 16 位 hex(8 bytes) | 当前 record 对应的 span |
+| `parent_span_id` | 16 位 hex(8 bytes) | 父 span(LLM/TOOL → STEP,STEP → AGENT) |
+
+**两种模式的 ID 来源**:
+
+| 模式 | ID 来源 |
+|---|---|
+| 非 logOnly(有 OTLP endpoint) | 从真实 OTel span 的 `spanContext()` 提取 |
+| logOnly(仅日志) | 使用 `crypto.randomBytes` 自生成 |
+
+**设计要求**:
+- 非 logOnly 模式下,`replayEventsAsSpans()` 在事件对象上标注 `_otel_span_id` / `_otel_step_span_id`,后续 `generateTurnLogRecords()` 读取
+- logOnly 模式下,事件无标注,回退到自生成
+- 三个字段均不得为 `null` 或空字符串
+
+**踩过的坑**:claude 插件早期 logOnly 模式全部 `trace_id: null`,非 logOnly 模式无 `span_id`/`parent_span_id` 字段,导致 JSONL 数据无法与 trace 关联,也无法独立构建 span 树。
+
+---
+
+## C13. CONFIG_DIR 环境变量兼容
+
+当目标 agent 支持自定义配置目录的环境变量时(如 `CLAUDE_CONFIG_DIR`、`CODEX_CONFIG_DIR`),插件的配置文件路径必须跟随:
+
+```js
+const configDir = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+const CONFIG_PATH = path.join(configDir, "otel-config.json");
+```
+
+**涉及位置**:
+- `otel-config.json` 读取路径
+- `install` 命令写入 agent 的 `settings.json` 的路径
+- `check-env` 诊断输出中引用的配置路径
+
+**不能硬编码** `~/.<agent>/`。Harbor / CI 等容器化场景通过该环境变量将配置挂载到非默认位置。
+
+**踩过的坑**:claude 插件硬编码 `~/.claude/settings.json`,Harbor 场景设置 `CLAUDE_CONFIG_DIR=/app/config` 后 install 写入位置与 Claude Code 读取位置不一致,hook 无法生效。
+
+---
+
 ## 修订流程
 
 宪法本身有变更时,需以独立 PR 提交,且必须在 PR 描述中说明:
@@ -202,4 +266,4 @@ EOF
 - 反向影响:已有插件需要如何对齐
 - 不兼容变更的迁移路径
 
-新增条款编号顺延(C11 / C12 / ...),不复用历史编号。
+新增条款编号顺延(C14 / C15 / ...),不复用历史编号。

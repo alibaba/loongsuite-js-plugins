@@ -37,6 +37,8 @@
 **常见失败点**:
 - transcript 解析对边界 case(空文件 / 损坏 JSON 行)处理不当
 - replay 的 turn split 算法对单 turn / 多 turn / 含 tool calls / 末尾无 last_assistant_message 等模式覆盖不全
+- `alignWithHookEvents` 在历史 transcript 场景(llmEvents 数量 > 实际 turn 内 LLM 调用数)产生 ghost span — 需验证只有最近 N 条被配对,历史事件标记 `_discarded`
+- Anthropic provider 下 `input_tokens` 未加 `cache_read + cache_creation`(C11)
 
 ---
 
@@ -62,9 +64,48 @@
 | 5 | `gen_ai.tool.definitions` 同上,parsed function 项 name 与 mock 一致 | C3 |
 | **6** | **每个 LLM/TOOL/STEP/AGENT/ENTRY span 的 `endTime - startTime > 0`,且与 mock 事件时间差对应**(防止 hardcoded `endMs = startMs + 1` 类 bug) | **C2** |
 
-**通过条件**:6/6 PASS。
+| **7** | **JSONL 每条 record 含非 null 的 `trace_id`(32位hex)、`span_id`(16位hex)、`parent_span_id`(16位hex);同一 turn 内 trace_id 一致** | **C12** |
+| **8** | **含 cache token 的 LLM 事件,`usage.input_tokens` = api_input + cache_read + cache_creation(不是仅 api_input)** | **C11** |
+
+**通过条件**:8/8 PASS。
 
 > ⚠️ **加 V4.6 的背景**:首例实施 `100-instrumentation-qodercli` 在 V5 PASS 后才被用户发现 LLM span 全是 1ms duration,根因是 `replay.ts:renderLlm` 把 `endMs = startMs + 1` 硬编码(误以为每个 LLM event 只有一个时间戳)。如果 V4 当时就检查了 duration 就能在 e2e 阶段抓到。现已固化为模板要求。
+
+> ⚠️ **加 V4.7 的背景**:`opentelemetry-instrumentation-claude` 早期 logOnly 模式所有 record 的 `trace_id` 为 null,非 logOnly 模式完全缺少 `span_id`/`parent_span_id` 字段,导致 JSONL 数据无法与 trace 关联。现固化为模板要求。
+
+> ⚠️ **加 V4.8 的背景**:`opentelemetry-instrumentation-claude` 直接使用 Anthropic API 的 `usage.input_tokens`(仅非缓存部分),实际上报值比真实值低 10-100 倍。Anthropic 开启 prompt caching 时必须累加全部 token 类别。
+
+### V4.7 详细测试方法 — JSONL span_id 完整性
+
+**logOnly 模式测试**:
+1. 配置仅 `log_enabled=true`,无 `otlp_endpoint`
+2. 构造含 ≥2 个 LLM 调用 + ≥1 个 tool 调用的 mock transcript
+3. 调用 `exportSessionTrace()` 产生 JSONL 文件
+4. 逐行解析,断言每条 record:
+   - `trace_id`: 非 null,`/^[0-9a-f]{32}$/`
+   - `span_id`: 非 null,`/^[0-9a-f]{16}$/`
+   - `parent_span_id`: 非 null,`/^[0-9a-f]{16}$/`
+5. 同一 turn 内所有 record 共享相同 `trace_id`
+6. LLM record 的 `parent_span_id` 指向 STEP span
+7. TOOL record 的 `parent_span_id` 指向 STEP span
+
+**非 logOnly 模式追加验证**:
+1. 配置 `otlp_endpoint`(InMemoryExporter) + `log_enabled=true`
+2. 执行后对比:JSONL 中的 `span_id` 与 `InMemoryExporter.getFinishedSpans()` 导出的 span 的 `spanContext().spanId` 一致
+3. `trace_id` 与导出的 traceId 一致
+
+### V4.8 详细测试方法 — input_token 全量值(Anthropic provider)
+
+1. 构造含 cache token 的 mock LLM 事件:
+   ```js
+   { input_tokens: 200, cache_read_input_tokens: 15000, cache_creation_input_tokens: 3000 }
+   ```
+2. 调用 `exportSessionTrace()` 产生 JSONL
+3. 解析 `event.name == "llm.response"` 的 record,断言:
+   - `usage.input_tokens` = 18200(不是 200)
+   - `usage.total_tokens` = 18200 + output_tokens
+4. 对 OTel span 属性同样验证:
+   - `gen_ai.usage.input_tokens` = 18200
 
 ---
 
